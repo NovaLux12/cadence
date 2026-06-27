@@ -371,7 +371,10 @@ export async function listVehicleEntries(
     binds.push(opts.type);
   }
   if (opts.q && opts.q.trim()) {
-    const needle = `${opts.q.trim()}%`;
+    // Substring search across location + notes. SQLite's default LIKE is
+    // case-insensitive on ASCII, so "esso" matches "Esso Southampton" and
+    // "evie" matches "Easee Evie" — no LOWER() needed.
+    const needle = `%${opts.q.trim()}%`;
     where.push('(location LIKE ? OR notes LIKE ?)');
     binds.push(needle, needle);
   }
