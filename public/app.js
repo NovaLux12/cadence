@@ -57,18 +57,47 @@ function fmtGBP(pence) {
   return '£' + (pence / 100).toFixed(2);
 }
 
-function fmtDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00Z' : ''));
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+/**
+ * pence → pounds string for input pre-fill (e.g. 899 → "8.99").
+ */
+function penceToPoundsInput(pence) {
+  if (pence == null) return '';
+  return (pence / 100).toFixed(2);
 }
 
+function fmtDate(iso) {
+  if (!iso) return '';
+  // Parse YYYY-MM-DD as a *local* date (no UTC shift).
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
+ * Days between *today* (in the user's local timezone) and the given ISO date.
+ * Uses date-only arithmetic to avoid UTC-shift off-by-one.
+ * Returns positive integer if target is in the future, 0 if today, negative if past.
+ */
 function daysFromNow(iso) {
   if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const targetUtc = Date.UTC(y, m - 1, d);
+  // Start of today in user's local timezone, expressed as UTC midnight.
   const now = new Date();
-  const target = new Date(iso + (iso.length === 10 ? 'T00:00:00Z' : ''));
-  const ms = target.getTime() - now.getTime();
-  return Math.round(ms / 86400000);
+  const localY = now.getFullYear();
+  const localM = now.getMonth();
+  const localD = now.getDate();
+  const todayUtc = Date.UTC(localY, localM, localD);
+  return Math.round((targetUtc - todayUtc) / 86400000);
+}
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function dueLabel(days) {
@@ -132,17 +161,21 @@ function renderDashboardRow(r) {
   const card = document.createElement('div');
   card.className = `card ${urgencyClass(r.days_until)}`;
   const u = r.days_until != null ? dueLabel(r.days_until) : '';
+  const urgent = r.days_until != null && r.days_until <= 3;
+  const fields = [];
+  if (r.due_date) fields.push(`<div><span class="label">When</span><span class="value${urgent ? ' urgent' : ''}">${fmtDate(r.due_date)} · ${u}</span></div>`);
+  if (r.cost_pence != null) fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(r.cost_pence)}${r.billing_cycle ? ' / ' + r.billing_cycle : ''}</span></div>`);
+  if (r.next_action_label) fields.push(`<div><span class="label">Next</span><span class="value">${escapeHtml(r.next_action_label)}</span></div>`);
+  if (r.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(r.category)}</span></div>`);
   card.innerHTML = `
     <div class="card-head">
-      <div class="card-title">${escapeHtml(r.title)}</div>
+      <div class="card-title">
+        ${vendorAvatar(r)}
+        <span class="card-title-text">${escapeHtml(r.title)}</span>
+      </div>
       <span class="card-kind ${r.kind}">${r.kind}</span>
     </div>
-    <div class="card-meta">
-      ${r.due_date ? `<span><b>${fmtDate(r.due_date)}</b> · ${u}</span>` : ''}
-      ${r.cost_pence != null ? `<span><b>${fmtGBP(r.cost_pence)}</b> · ${r.billing_cycle || ''}</span>` : ''}
-      ${r.next_action_label ? `<span>${escapeHtml(r.next_action_label)}</span>` : ''}
-      ${r.category ? `<span>${escapeHtml(r.category)}</span>` : ''}
-    </div>
+    ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
     ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
     <div class="card-actions"></div>
   `;
@@ -176,6 +209,14 @@ function renderDashboardRow(r) {
   return card;
 }
 
+function vendorAvatar(r) {
+  // First-letter avatar: pull from vendor or fall back to title.
+  const seed = (r.kind === 'vehicle-entry' ? '' : '') || (r._vendor || '') || r.title || r.kind;
+  const ch = (seed.trim()[0] || '?').toUpperCase();
+  const cls = r.kind === 'subscription' || r.kind === 'reminder' || r.kind === 'watchlist' ? r.kind : (r.entry_type || r.kind);
+  return `<span class="vendor-avatar ${cls}">${escapeHtml(ch)}</span>`;
+}
+
 async function fetchItem(kind, id) {
   if (r.kind === 'subscription') return (await api('GET', `/api/subscriptions/${r.id}`));
   if (r.kind === 'reminder')     return (await api('GET', `/api/reminders/${r.id}`));
@@ -207,18 +248,22 @@ function renderSubscriptions() {
     card.className = 'card';
     const days = s.next_due_date ? daysFromNow(s.next_due_date) : null;
     card.classList.add(urgencyClass(days));
+    const fields = [];
+    if (s.vendor) fields.push(`<div><span class="label">Vendor</span><span class="value">${escapeHtml(s.vendor)}</span></div>`);
+    if (s.cost_pence != null) fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(s.cost_pence)}${s.currency ? ' ' + s.currency : ''}</span></div>`);
+    if (s.next_due_date) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(s.next_due_date)} · ${dueLabel(days)}</span></div>`);
+    if (s.billing_cycle) fields.push(`<div><span class="label">Cycle</span><span class="value">${s.billing_cycle}</span></div>`);
+    if (s.status !== 'active') fields.push(`<div><span class="label">Status</span><span class="value">${s.status}</span></div>`);
+    if (!s.auto_renew) fields.push(`<div><span class="label">Renew</span><span class="value">manual</span></div>`);
     card.innerHTML = `
       <div class="card-head">
-        <div class="card-title">${escapeHtml(s.name)}</div>
+        <div class="card-title">
+          ${vendorAvatar({ ...s, kind: 'subscription' })}
+          <span class="card-title-text">${escapeHtml(s.name)}</span>
+        </div>
         <span class="card-kind subscription">${s.billing_cycle}</span>
       </div>
-      <div class="card-meta">
-        ${s.vendor ? `<span>${escapeHtml(s.vendor)}</span>` : ''}
-        ${s.cost_pence != null ? `<span><b>${fmtGBP(s.cost_pence)}</b>${s.currency ? ' ' + s.currency : ''}</span>` : ''}
-        ${s.next_due_date ? `<span><b>${fmtDate(s.next_due_date)}</b> · ${dueLabel(days)}</span>` : ''}
-        ${s.status !== 'active' ? `<span><b>${s.status}</b></span>` : ''}
-        ${s.auto_renew ? '' : '<span>manual</span>'}
-      </div>
+      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
       ${s.notes ? `<div class="card-notes">${escapeHtml(s.notes)}</div>` : ''}
       <div class="card-actions"></div>
     `;
@@ -271,16 +316,20 @@ function renderReminders() {
     card.className = 'card';
     const days = r.next_due ? daysFromNow(r.next_due) : null;
     card.classList.add(urgencyClass(days));
+    const fields = [];
+    if (r.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(r.category)}</span></div>`);
+    if (r.next_due) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(r.next_due)} · ${dueLabel(days)}</span></div>`);
+    if (r.last_done) fields.push(`<div><span class="label">Last</span><span class="value">${fmtDate(r.last_done)}</span></div>`);
+    if (r.status !== 'active') fields.push(`<div><span class="label">Status</span><span class="value">${r.status}</span></div>`);
     card.innerHTML = `
       <div class="card-head">
-        <div class="card-title">${escapeHtml(r.title)}</div>
+        <div class="card-title">
+          ${vendorAvatar({ ...r, kind: 'reminder' })}
+          <span class="card-title-text">${escapeHtml(r.title)}</span>
+        </div>
         <span class="card-kind reminder">${r.cadence_value} ${r.cadence_unit}</span>
       </div>
-      <div class="card-meta">
-        ${r.category ? `<span>${escapeHtml(r.category)}</span>` : ''}
-        ${r.next_due ? `<span><b>${fmtDate(r.next_due)}</b> · ${dueLabel(days)}</span>` : ''}
-        ${r.last_done ? `<span>last: ${fmtDate(r.last_done)}</span>` : ''}
-      </div>
+      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
       ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
       <div class="card-actions"></div>
     `;
@@ -326,16 +375,19 @@ function renderWatchlist() {
     card.className = 'card';
     const days = w.next_action_date ? daysFromNow(w.next_action_date) : null;
     card.classList.add(urgencyClass(days));
+    const fields = [];
+    if (w.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(w.category)}</span></div>`);
+    if (w.parties) fields.push(`<div><span class="label">Parties</span><span class="value">${escapeHtml(w.parties)}</span></div>`);
+    if (w.next_action_date) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(w.next_action_date)} · ${w.next_action_label || dueLabel(days)}</span></div>`);
     card.innerHTML = `
       <div class="card-head">
-        <div class="card-title">${escapeHtml(w.title)}</div>
+        <div class="card-title">
+          ${vendorAvatar({ ...w, kind: 'watchlist' })}
+          <span class="card-title-text">${escapeHtml(w.title)}</span>
+        </div>
         <span class="card-kind watchlist">${w.status}</span>
       </div>
-      <div class="card-meta">
-        ${w.category ? `<span>${escapeHtml(w.category)}</span>` : ''}
-        ${w.parties ? `<span>${escapeHtml(w.parties)}</span>` : ''}
-        ${w.next_action_date ? `<span><b>${fmtDate(w.next_action_date)}</b> · ${w.next_action_label || dueLabel(days)}</span>` : ''}
-      </div>
+      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
       ${w.notes ? `<div class="card-notes">${escapeHtml(w.notes)}</div>` : ''}
       <div class="card-actions"></div>
     `;
@@ -422,19 +474,24 @@ function renderVehicleEntries() {
   for (const e of state.vehicleEntries.slice(0, 30)) {
     const card = document.createElement('div');
     card.className = 'card';
+    const fields = [];
+    fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(e.cost_pence)}</span></div>`);
+    if (e.litres) fields.push(`<div><span class="label">Litres</span><span class="value">${e.litres.toFixed(2)} L</span></div>`);
+    if (e.kwh) fields.push(`<div><span class="label">kWh</span><span class="value">${e.kwh.toFixed(2)}</span></div>`);
+    if (e.odometer_miles) fields.push(`<div><span class="label">Odo</span><span class="value">${e.odometer_miles} mi</span></div>`);
+    if (e.unit) fields.push(`<div><span class="label">Unit</span><span class="value">${escapeHtml(e.unit)}</span></div>`);
+    if (e.location) fields.push(`<div><span class="label">Where</span><span class="value">${escapeHtml(e.location)}</span></div>`);
+    if (e.is_home_charge) fields.push(`<div><span class="label">Charge</span><span class="value">home</span></div>`);
+    const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
     card.innerHTML = `
       <div class="card-head">
-        <div class="card-title">${e.entry_type === 'fuel' ? '⛽ Fuel' : '⚡ Charge'}</div>
+        <div class="card-title">
+          <span class="vendor-avatar ${e.entry_type}">${icon}</span>
+          <span class="card-title-text">${e.entry_type === 'fuel' ? 'Fuel' : 'Charge'}</span>
+        </div>
         <span class="card-kind ${e.entry_type}">${fmtDate(e.entry_date)}</span>
       </div>
-      <div class="card-meta">
-        <span><b>${fmtGBP(e.cost_pence)}</b></span>
-        ${e.litres ? `<span>${e.litres.toFixed(2)} L</span>` : ''}
-        ${e.kwh ? `<span>${e.kwh.toFixed(2)} kWh</span>` : ''}
-        ${e.odometer_miles ? `<span>${e.odometer_miles} mi</span>` : ''}
-        ${e.is_home_charge ? '<span>home</span>' : ''}
-        ${e.location ? `<span>${escapeHtml(e.location)}</span>` : ''}
-      </div>
+      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
       ${e.notes ? `<div class="card-notes">${escapeHtml(e.notes)}</div>` : ''}
       <div class="card-actions"></div>
     `;
@@ -460,7 +517,7 @@ const SCHEMAS = {
       { key: 'name', label: 'Name', type: 'text', required: true },
       { key: 'vendor', label: 'Vendor', type: 'text' },
       { key: 'category', label: 'Category', type: 'text', placeholder: 'cloud / utilities / etc' },
-      { key: 'cost_pence', label: 'Cost (pence)', type: 'number', placeholder: '999 = £9.99' },
+      { key: 'cost_pounds', label: 'Cost', type: 'number', step: '0.01', placeholder: '8.99' },
       { key: 'currency', label: 'Currency', type: 'text', default: 'GBP' },
       { key: 'billing_cycle', label: 'Cycle', type: 'select', options: ['monthly', 'yearly', 'weekly', 'one-off'] },
       { key: 'next_due_date', label: 'Next due', type: 'date' },
@@ -500,13 +557,13 @@ const SCHEMAS = {
     title: () => 'Log vehicle entry',
     fields: [
       { key: 'entry_type', label: 'Type', type: 'select', options: ['fuel', 'charge'], required: true },
-      { key: 'entry_date', label: 'Date', type: 'date', required: true },
-      { key: 'odometer_miles', label: 'Odometer (miles)', type: 'number' },
-      { key: 'cost_pence', label: 'Cost (pence)', type: 'number', required: true, placeholder: '5999 = £59.99' },
-      { key: 'litres', label: 'Litres (fuel)', type: 'number' },
-      { key: 'kwh', label: 'kWh (charge)', type: 'number' },
-      { key: 'unit', label: 'Unit', type: 'text', placeholder: 'p/litre or p/kWh' },
-      { key: 'location', label: 'Location', type: 'text' },
+      { key: 'entry_date', label: 'Date', type: 'date', required: true, default: () => todayISO() },
+      { key: 'odometer_miles', label: 'Odometer (mi)', type: 'number' },
+      { key: 'cost_pounds', label: 'Total cost', type: 'number', step: '0.01', required: true, placeholder: '59.99' },
+      { key: 'litres', label: 'Litres (fuel)', type: 'number', step: '0.01' },
+      { key: 'kwh', label: 'kWh (charge)', type: 'number', step: '0.01' },
+      { key: 'unit_price', label: 'Unit price (per L / kWh)', type: 'number', step: '0.001', placeholder: '1.499' },
+      { key: 'location', label: 'Location', type: 'text', placeholder: 'e.g. Shell Maidstone' },
       { key: 'is_home_charge', label: 'Home charge', type: 'checkbox' },
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
@@ -524,7 +581,14 @@ async function openModal(kind, item) {
     const div = document.createElement('div');
     div.className = 'field';
     const id = `field-${f.key}`;
-    const val = item ? item[f.key] : f.default ?? '';
+    // Pre-fill: cost_pounds takes precedence over cost_pence; date defaults to today.
+    let val;
+    if (item) {
+      val = item[f.key];
+      if (f.key === 'cost_pounds' && item.cost_pence != null) val = penceToPoundsInput(item.cost_pence);
+    } else {
+      val = typeof f.default === 'function' ? f.default() : (f.default ?? '');
+    }
     let inputHtml = '';
     if (f.type === 'select') {
       inputHtml = `<select id="${id}" name="${f.key}">
@@ -537,7 +601,8 @@ async function openModal(kind, item) {
       div.classList.add('field-checkbox');
     } else {
       const t = f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text';
-      inputHtml = `<input type="${t}" id="${id}" name="${f.key}" value="${val ?? ''}" ${f.required ? 'required' : ''} placeholder="${f.placeholder || ''}"/>`;
+      const step = f.step ? `step="${f.step}"` : '';
+      inputHtml = `<input type="${t}" id="${id}" name="${f.key}" value="${val ?? ''}" ${step} ${f.required ? 'required' : ''} placeholder="${f.placeholder || ''}"/>`;
     }
     if (f.type !== 'checkbox') {
       div.innerHTML = `<label for="${id}">${f.label}</label>${inputHtml}`;
@@ -582,6 +647,18 @@ $('#modal-form')?.addEventListener('submit', async (e) => {
     else if (f.type === 'number') v = el.value === '' ? null : Number(el.value);
     else v = el.value;
     body[f.key] = v;
+  }
+  // For vehicle entries: if cost_pounds not given but unit_price × litres/kWh is, compute it.
+  if (kind === 'vehicle-entry') {
+    if (!body.cost_pounds && body.unit_price) {
+      const qty = body.litres || body.kwh;
+      if (qty) body.cost_pounds = Math.round(body.unit_price * qty * 100) / 100;
+    }
+    // Derive `unit` text (e.g. "p/litre @ 155.2") for storage as a hint.
+    if (body.unit_price) {
+      const pencePerUnit = Math.round(body.unit_price * 100);
+      body.unit = body.litres ? `p/litre @ ${pencePerUnit}` : body.kwh ? `p/kWh @ ${pencePerUnit}` : null;
+    }
   }
   // Translate vehicle-entry kind to POST /api/vehicle/entries
   const path = (() => {

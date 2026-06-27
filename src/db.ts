@@ -10,6 +10,37 @@ import type {
 } from './types';
 
 // =========================================================
+// Helpers
+// =========================================================
+
+/**
+ * Normalise a money value into integer pence for storage.
+ * Accepts either:
+ *   - cost_pence: integer (already in pence)
+ *   - cost_pounds: number or string (decimal pounds; e.g. 8.99 or "8.99")
+ * Returns null if neither is provided.
+ */
+export function normalizeCostPence(pence: unknown, pounds: unknown): number | null {
+  if (pounds !== undefined && pounds !== null && pounds !== '') {
+    const n = typeof pounds === 'number' ? pounds : parseFloat(String(pounds));
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n * 100);
+  }
+  if (pence !== undefined && pence !== null && pence !== '') {
+    const n = typeof pence === 'number' ? pence : Number(pence);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n);
+  }
+  return null;
+}
+
+/** Format pence as £X.XX (or empty if null). */
+export function fmtGBP(pence: number | null | undefined): string {
+  if (pence == null) return '';
+  return '£' + (pence / 100).toFixed(2);
+}
+
+// =========================================================
 // Subscriptions
 // =========================================================
 
@@ -33,6 +64,7 @@ export async function getSubscription(db: D1Database, id: number): Promise<Subsc
 }
 
 export async function createSubscription(db: D1Database, s: Partial<Subscription>): Promise<Subscription> {
+  const cost = normalizeCostPence(s.cost_pence, s.cost_pounds);
   const r = await db
     .prepare(
       `INSERT INTO subscriptions (name, vendor, category, cost_pence, currency, billing_cycle,
@@ -43,7 +75,7 @@ export async function createSubscription(db: D1Database, s: Partial<Subscription
       s.name ?? 'Untitled',
       s.vendor ?? null,
       s.category ?? null,
-      s.cost_pence ?? null,
+      cost,
       s.currency ?? 'GBP',
       s.billing_cycle ?? 'monthly',
       s.next_due_date ?? null,
@@ -63,7 +95,14 @@ export async function updateSubscription(
 ): Promise<Subscription | null> {
   const cur = await getSubscription(db, id);
   if (!cur) return null;
-  const merged = { ...cur, ...patch, updated_at: new Date().toISOString() };
+  const merged = {
+    ...cur,
+    ...patch,
+    cost_pence: patch.cost_pence !== undefined || patch.cost_pounds !== undefined
+      ? normalizeCostPence(patch.cost_pence, patch.cost_pounds)
+      : cur.cost_pence,
+    updated_at: new Date().toISOString(),
+  };
   await db
     .prepare(
       `UPDATE subscriptions SET
@@ -339,20 +378,22 @@ export async function listVehicleEntries(
 }
 
 export async function createVehicleEntry(db: D1Database, e: Partial<VehicleEntry>): Promise<VehicleEntry> {
+  const cost = normalizeCostPence(e.cost_pence, e.cost_pounds);
   const row = await db
     .prepare(
-      `INSERT INTO vehicle_entries (vehicle, entry_type, entry_date, odometer_miles, kwh, litres,
+      `INSERT INTO vehicle_entries (vehicle, entry_type, entry_date, odometer_miles, miles, kwh, litres,
          cost_pence, unit, location, is_home_charge, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
     )
     .bind(
       e.vehicle ?? 'mycar',
       e.entry_type ?? 'fuel',
       e.entry_date ?? new Date().toISOString().slice(0, 10),
       e.odometer_miles ?? null,
+      e.miles ?? null,
       e.kwh ?? null,
       e.litres ?? null,
-      e.cost_pence ?? 0,
+      cost,
       e.unit ?? null,
       e.location ?? null,
       e.is_home_charge ?? 0,
@@ -428,38 +469,38 @@ export async function dashboard(db: D1Database, opts: { days?: number } = {}): P
       `
       SELECT * FROM (
         SELECT 'subscription' AS kind,
-               id, name AS title, category, status,
+               id, name AS title, vendor, category, status,
                next_due_date AS due_date, NULL AS next_action_label,
-               CAST(julianday(next_due_date) - julianday('now') AS INTEGER) AS days_until,
+               CAST(julianday(next_due_date) - julianday(date('now')) AS INTEGER) AS days_until,
                cost_pence, billing_cycle, notes
         FROM subscriptions
         WHERE status='active'
           AND next_due_date IS NOT NULL
-          AND julianday(next_due_date) - julianday('now') <= ?
+          AND julianday(next_due_date) - julianday(date('now')) <= ?
 
         UNION ALL
 
         SELECT 'reminder' AS kind,
-               id, title, category, status,
+               id, title, NULL AS vendor, category, status,
                next_due AS due_date, NULL AS next_action_label,
-               CAST(julianday(next_due) - julianday('now') AS INTEGER) AS days_until,
+               CAST(julianday(next_due) - julianday(date('now')) AS INTEGER) AS days_until,
                NULL AS cost_pence, NULL AS billing_cycle, notes
         FROM reminders
         WHERE status='active'
           AND next_due IS NOT NULL
-          AND julianday(next_due) - julianday('now') <= ?
+          AND julianday(next_due) - julianday(date('now')) <= ?
 
         UNION ALL
 
         SELECT 'watchlist' AS kind,
-               id, title, category, status,
+               id, title, NULL AS vendor, category, status,
                next_action_date AS due_date, next_action_label,
-               CAST(julianday(next_action_date) - julianday('now') AS INTEGER) AS days_until,
+               CAST(julianday(next_action_date) - julianday(date('now')) AS INTEGER) AS days_until,
                NULL AS cost_pence, NULL AS billing_cycle, notes
         FROM watchlist
         WHERE status IN ('open','waiting')
           AND next_action_date IS NOT NULL
-          AND julianday(next_action_date) - julianday('now') <= ?
+          AND julianday(next_action_date) - julianday(date('now')) <= ?
       )
       ORDER BY due_date ASC
       LIMIT 100
@@ -491,27 +532,27 @@ export async function findAlertCandidates(db: D1Database, days: number): Promise
   const sql = `
     WITH upcoming AS (
       SELECT 'subscription' AS kind, id, name AS title, next_due_date AS due_date,
-             CAST(julianday(next_due_date) - julianday('now') AS INTEGER) AS days_until,
+             CAST(julianday(next_due_date) - julianday(date('now')) AS INTEGER) AS days_until,
              alert_windows, notes
       FROM subscriptions
       WHERE status='active' AND next_due_date IS NOT NULL
-        AND julianday(next_due_date) - julianday('now') BETWEEN 0 AND ?
+        AND julianday(next_due_date) - julianday(date('now')) BETWEEN 0 AND ?
 
       UNION ALL
 
-      SELECT 'reminder', id, title, next_due, CAST(julianday(next_due) - julianday('now') AS INTEGER),
+      SELECT 'reminder', id, title, next_due, CAST(julianday(next_due) - julianday(date('now')) AS INTEGER),
              alert_windows, notes
       FROM reminders
       WHERE status='active' AND next_due IS NOT NULL
-        AND julianday(next_due) - julianday('now') BETWEEN 0 AND ?
+        AND julianday(next_due) - julianday(date('now')) BETWEEN 0 AND ?
 
       UNION ALL
 
-      SELECT 'watchlist', id, title, next_action_date, CAST(julianday(next_action_date) - julianday('now') AS INTEGER),
+      SELECT 'watchlist', id, title, next_action_date, CAST(julianday(next_action_date) - julianday(date('now')) AS INTEGER),
              alert_windows, notes
       FROM watchlist
       WHERE status IN ('open','waiting') AND next_action_date IS NOT NULL
-        AND julianday(next_action_date) - julianday('now') BETWEEN 0 AND ?
+        AND julianday(next_action_date) - julianday(date('now')) BETWEEN 0 AND ?
     )
     SELECT * FROM upcoming ORDER BY due_date ASC
   `;
@@ -581,7 +622,7 @@ export interface VehicleWindow {
 async function vehicleWindow(db: D1Database, vehicle: string, sinceIso: string): Promise<VehicleWindow> {
   const { results } = await db
     .prepare(
-      `SELECT entry_type, SUM(cost_pence) AS pence, SUM(kwh) AS kwh, SUM(litres) AS litres,
+      `SELECT entry_type, SUM(cost_pence) AS pence, SUM(kwh) AS kwh, SUM(litres) AS litres, SUM(miles) AS miles,
               SUM(CASE WHEN is_home_charge=1 THEN cost_pence ELSE 0 END) AS home_pence,
               SUM(CASE WHEN is_home_charge=1 THEN kwh ELSE 0 END) AS home_kwh
        FROM vehicle_entries
@@ -594,6 +635,7 @@ async function vehicleWindow(db: D1Database, vehicle: string, sinceIso: string):
       pence: number;
       kwh: number;
       litres: number;
+      miles: number;
       home_pence: number;
       home_kwh: number;
     }>();
@@ -601,26 +643,34 @@ async function vehicleWindow(db: D1Database, vehicle: string, sinceIso: string):
   const chargeRow = results?.find((r) => r.entry_type === 'charge');
   const fuelPence = fuelRow?.pence ?? 0;
   const fuelLitres = fuelRow?.litres ?? 0;
+  const fuelMiles = fuelRow?.miles ?? 0;
   const chargePence = chargeRow?.pence ?? 0;
   const chargeKwh = chargeRow?.kwh ?? 0;
   const homePence = chargeRow?.home_pence ?? 0;
   const homeKwh = chargeRow?.home_kwh ?? 0;
 
-  // Total miles = max odometer - min odometer for the window
-  const odoRow = await db
-    .prepare(
-      `SELECT MIN(odometer_miles) AS lo, MAX(odometer_miles) AS hi
-       FROM vehicle_entries
-       WHERE vehicle=? AND entry_date >= ? AND odometer_miles IS NOT NULL`
-    )
-    .bind(vehicle, sinceIso)
-    .first<{ lo: number; hi: number }>();
-  const miles = odoRow?.lo != null && odoRow?.hi != null ? odoRow.hi - odoRow.lo : null;
+  // Total miles = sum of per-entry miles in window (preferred) OR odometer delta fallback.
+  let miles: number | null = fuelMiles + (chargeRow?.miles ?? 0);
+  if (!miles) {
+    const odoRow = await db
+      .prepare(
+        `SELECT MIN(odometer_miles) AS lo, MAX(odometer_miles) AS hi
+         FROM vehicle_entries
+         WHERE vehicle=? AND entry_date >= ? AND odometer_miles IS NOT NULL`
+      )
+      .bind(vehicle, sinceIso)
+      .first<{ lo: number; hi: number }>();
+    if (odoRow?.lo != null && odoRow?.hi != null && odoRow.lo !== odoRow.hi) {
+      miles = odoRow.hi - odoRow.lo;
+    } else {
+      miles = null;
+    }
+  }
 
   const totalPence = fuelPence + chargePence;
   const ppm = miles && miles > 0 ? totalPence / miles : null;
-  // UK MPG (imperial): miles per UK gallon (4.54609 L). Approximate using fuel-only.
-  const mpg = fuelLitres > 0 && miles != null ? (miles / fuelLitres) * 4.54609 : null;
+  // UK MPG (imperial): miles per UK gallon (4.54609 L). Fuel-only.
+  const mpg = fuelLitres > 0 && fuelMiles > 0 ? fuelMiles / (fuelLitres / 4.54609) : null;
 
   return {
     fuel_pence: fuelPence,

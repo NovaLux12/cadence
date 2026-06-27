@@ -34,7 +34,10 @@
         <div class="panel-sub">Next 60 days · <span id="due-count">…</span></div>
       </div>
       <div id="dashboard-list" class="card-list"></div>
-      <div class="empty hidden" id="dashboard-empty">Nothing due in the next 60 days.</div>
+      <div class="empty hidden" id="dashboard-empty">
+        <p>Nothing due in the next 60 days. 🎉</p>
+        <p class="empty-sub">Add a subscription, reminder, or watchlist item to get started.</p>
+      </div>
     </section>
 
     <section id="tab-subscriptions" class="tab-panel">
@@ -43,7 +46,11 @@
         <button class="btn btn-primary" data-add="subscription">+ Add</button>
       </div>
       <div id="subscription-list" class="card-list"></div>
-      <div class="empty hidden" id="subscription-empty">No subscriptions yet.</div>
+      <div class="empty hidden" id="subscription-empty">
+        <p>No subscriptions yet.</p>
+        <p class="empty-sub">Track any recurring paid service — cloud, email, storage, leases.</p>
+        <button class="btn btn-primary" data-add="subscription">+ Add your first</button>
+      </div>
     </section>
 
     <section id="tab-reminders" class="tab-panel">
@@ -52,7 +59,11 @@
         <button class="btn btn-primary" data-add="reminder">+ Add</button>
       </div>
       <div id="reminder-list" class="card-list"></div>
-      <div class="empty hidden" id="reminder-empty">No reminders yet.</div>
+      <div class="empty hidden" id="reminder-empty">
+        <p>No reminders yet.</p>
+        <p class="empty-sub">Anything on a recurring schedule — annual renewals, quarterly maintenance, weekly backups.</p>
+        <button class="btn btn-primary" data-add="reminder">+ Add your first</button>
+      </div>
     </section>
 
     <section id="tab-watchlist" class="tab-panel">
@@ -61,7 +72,11 @@
         <button class="btn btn-primary" data-add="watchlist">+ Add</button>
       </div>
       <div id="watchlist-list" class="card-list"></div>
-      <div class="empty hidden" id="watchlist-empty">Nothing on the watchlist.</div>
+      <div class="empty hidden" id="watchlist-empty">
+        <p>Nothing on the watchlist.</p>
+        <p class="empty-sub">Active cases, contracts awaiting action, decisions in progress.</p>
+        <button class="btn btn-primary" data-add="watchlist">+ Add your first</button>
+      </div>
     </section>
 
     <section id="tab-vehicle" class="tab-panel">
@@ -74,6 +89,11 @@
 
       <h3 class="subhead">Recent entries</h3>
       <div id="vehicle-list" class="card-list"></div>
+      <div class="empty hidden" id="vehicle-empty">
+        <p>No entries yet.</p>
+        <p class="empty-sub">Log fuel fills and charge sessions to see running costs and £/mile.</p>
+        <button class="btn btn-primary" data-add="vehicle-entry">+ Log your first fill</button>
+      </div>
     </section>
   </main>
 
