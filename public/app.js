@@ -11,6 +11,7 @@ const state = {
   watchlist: [],
   vehicleEntries: [],
   vehicleSummary: null,
+  vehicleInsights: null,
   vehicleLimit: 30,
   vehicleFilters: { type: '', q: '', showIgnored: false },
   vehicleSelectMode: false,
@@ -433,15 +434,18 @@ async function loadVehicle() {
   if (state.vehicleFilters.q) qs.set('q', state.vehicleFilters.q);
   if (state.vehicleFilters.showIgnored) qs.set('includeIgnored', '1');
   qs.set('limit', String(state.vehicleLimit));
-  const [entries, summary, easee, live] = await Promise.all([
+  const [entries, summary, insights, easee, live] = await Promise.all([
     api('GET', `/api/vehicle/entries?${qs.toString()}`),
     api('GET', '/api/vehicle/summary?vehicle=mycar'),
+    api('GET', '/api/vehicle/insights?vehicle=mycar'),
     api('GET', '/api/easee/status'),
     api('GET', '/api/easee/live').catch(() => ({ charger: null, session: null, configured: false })),
   ]);
   state.vehicleEntries = entries.items;
   state.vehicleSummary = summary;
+  state.vehicleInsights = insights;
   renderVehicleSummary(summary);
+  renderVehicleInsights(insights);
   renderVehicleFilterChips();
   renderVehicleEntries();
   renderEasee(easee, live);
@@ -623,6 +627,45 @@ function renderVehicleSummary(s) {
     `;
     el.appendChild(lastFillDiv);
   }
+}
+
+function renderVehicleInsights(i) {
+  const el = $('#vehicle-insights');
+  if (!el) return;
+  if (!i) {
+    el.innerHTML = '';
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const fmtDays = (n) => n == null ? '—' : (n === 0 ? 'today' : n === 1 ? '1 day ago' : `${n} days ago`);
+  const fmtMiles = (n) => n == null ? '—' : `${n.toLocaleString()} mi`;
+  const fmtAvg = (n) => n == null ? '—' : `${n.toFixed(1)} mi/day`;
+  const fmtDate = (iso) => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
+  el.innerHTML = `
+    <div class="insights-row">
+      <div class="insight-tile">
+        <div class="insight-label">Last fill</div>
+        <div class="insight-v">${fmtDays(i.days_since_last_fuel)}</div>
+        <div class="insight-sub">${fmtMiles(i.miles_since_last_fuel)} since</div>
+      </div>
+      <div class="insight-tile">
+        <div class="insight-label">Last charge</div>
+        <div class="insight-v electric">${fmtDays(i.days_since_last_charge)}</div>
+        <div class="insight-sub">${fmtMiles(i.miles_since_last_charge)} since</div>
+      </div>
+      <div class="insight-tile">
+        <div class="insight-label">Daily avg (30d)</div>
+        <div class="insight-v">${fmtAvg(i.avg_daily_miles_30d)}</div>
+        <div class="insight-sub">est. from odo deltas</div>
+      </div>
+      <div class="insight-tile">
+        <div class="insight-label">Next fill ~</div>
+        <div class="insight-v">${fmtDate(i.projected_next_fuel_date)}</div>
+        <div class="insight-sub">at 380 mi range</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderSparkChart(trend) {
@@ -1111,7 +1154,11 @@ function resetModalActions() {
 }
 
 $('#modal-close')?.addEventListener('click', closeModal);
-$('#modal-cancel')?.addEventListener('click', closeModal);
+// modal-cancel listener is bound by resetModalActions() each time the
+// modal is opened — don't double-bind here (the original button is
+// replaced by resetModalActions' innerHTML assignment, so a module-load
+// listener wouldn't survive anyway).
+$('#modal-backdrop')?.addEventListener('click', (e) => {
 $('#modal-backdrop')?.addEventListener('click', (e) => {
   if (e.target.id === 'modal-backdrop') closeModal();
 });
@@ -1221,3 +1268,4 @@ function escapeHtml(s) {
   loadWatchlist();
   loadVehicle();
 })();
+})

@@ -385,6 +385,43 @@ a { color: var(--accent); }
   min-width: 80px;
 }
 
+/* === Vehicle insights row (4 tiles, derived stats) === */
+.insights-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.insight-tile {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.insight-label {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.insight-v {
+  font-size: 17px;
+  font-weight: 700;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  line-height: 1;
+}
+.insight-v.electric { color: var(--green); }
+.insight-sub {
+  font-size: 11px;
+  color: var(--text-dimmer);
+  margin-top: 4px;
+}
+@media (min-width: 700px) {
+  .insights-row { grid-template-columns: repeat(4, 1fr); }
+}
+
 /* Inline chart (sparkline) */
 .spark-chart {
   width: 100%;
