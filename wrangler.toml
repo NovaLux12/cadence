@@ -7,11 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cadence-db"
-database_id = "REPLACE_WITH_REAL_DB_ID"
+database_id = "8de7a002-f28e-467d-9651-49ce3a7e93e8"
 
 # Cron trigger — daily at 07:30 UTC (~08:30 BST) for alert dispatch
+# Custom domain — bound via the Workers Custom Domains feature
 [triggers]
 crons = ["30 7 * * *"]
+
+# Worker domains (Custom Domains, no DNS changes needed)
+workers_dev = true
 
 # Static assets for the SPA frontend
 [assets]
