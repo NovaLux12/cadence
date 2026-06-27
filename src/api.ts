@@ -363,6 +363,11 @@ app.get('/api/vehicle/summary', async (c) => {
   return c.json(await db.vehicleSummary(c.env.DB, vehicle));
 });
 
+app.get('/api/vehicle/insights', async (c) => {
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
+  return c.json(await db.vehicleInsights(c.env.DB, vehicle));
+});
+
 app.get('/api/vehicle/settings', async (c) => {
   const vehicle = c.req.query('vehicle') ?? 'mycar';
   const s = await db.getVehicleSettings(c.env.DB, vehicle);

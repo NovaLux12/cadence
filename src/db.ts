@@ -735,6 +735,89 @@ async function vehicleWindow(db: D1Database, vehicle: string, sinceIso: string):
   };
 }
 
+/**
+ * Quick derived stats for the Vehicle tab header — days since last fill,
+ * days since last charge, miles since last fill, avg daily miles (30d).
+ * All computed server-side from the entry table; client just renders.
+ */
+export async function vehicleInsights(
+  db: D1Database,
+  vehicle: string
+): Promise<{
+  days_since_last_fuel: number | null;
+  days_since_last_charge: number | null;
+  miles_since_last_fuel: number | null;
+  miles_since_last_charge: number | null;
+  avg_daily_miles_30d: number | null;
+  projected_next_fuel_date: string | null;
+}> {
+  // Local-timezone "today" — anchor everything to the user's wall clock.
+  const today = new Date();
+  const localTodayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const daysSince = (dateIso: string | null) => {
+    if (!dateIso) return null;
+    const target = new Date(dateIso + 'T00:00:00');
+    const base = new Date(localTodayIso + 'T00:00:00');
+    return Math.round((base.getTime() - target.getTime()) / 86400000);
+  };
+
+  const lastFuelRow = await db
+    .prepare(
+      `SELECT entry_date, odometer_miles, miles
+       FROM vehicle_entries
+       WHERE vehicle=? AND entry_type='fuel' AND ignored=0
+       ORDER BY entry_date DESC, id DESC LIMIT 1`
+    )
+    .bind(vehicle)
+    .first<{ entry_date: string; odometer_miles: number | null; miles: number | null }>();
+  const lastChargeRow = await db
+    .prepare(
+      `SELECT entry_date, odometer_miles, miles
+       FROM vehicle_entries
+       WHERE vehicle=? AND entry_type='charge' AND ignored=0
+       ORDER BY entry_date DESC, id DESC LIMIT 1`
+    )
+    .bind(vehicle)
+    .first<{ entry_date: string; odometer_miles: number | null; miles: number | null }>();
+
+  // Miles since last fill = current odo - last fill odo.
+  const settings = await getVehicleSettings(db, vehicle);
+  const currentOdo = settings?.current_odo_miles ?? null;
+  let milesSinceFuel: number | null = null;
+  let milesSinceCharge: number | null = null;
+  if (currentOdo != null && lastFuelRow?.odometer_miles != null) {
+    milesSinceFuel = Math.max(0, currentOdo - lastFuelRow.odometer_miles);
+  }
+  if (currentOdo != null && lastChargeRow?.odometer_miles != null) {
+    milesSinceCharge = Math.max(0, currentOdo - lastChargeRow.odometer_miles);
+  }
+
+  // Avg daily miles over last 30d.
+  const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const w = await vehicleWindow(db, vehicle, since);
+  const avgDailyMiles = w.total_miles != null && w.total_miles > 0 ? w.total_miles / 30 : null;
+
+  // Project next fuel date assuming tank range ~380 mi (typical Ford Kuga
+  // PHEV petrol range). Refill at 0 mi remaining.
+  let projectedNextFuel: string | null = null;
+  if (currentOdo != null && avgDailyMiles && avgDailyMiles > 0 && milesSinceFuel != null) {
+    const remaining = Math.max(0, 380 - milesSinceFuel);
+    const daysUntilNextFuel = remaining / avgDailyMiles;
+    const proj = new Date();
+    proj.setDate(proj.getDate() + Math.round(daysUntilNextFuel));
+    projectedNextFuel = `${proj.getFullYear()}-${String(proj.getMonth() + 1).padStart(2, '0')}-${String(proj.getDate()).padStart(2, '0')}`;
+  }
+
+  return {
+    days_since_last_fuel: daysSince(lastFuelRow?.entry_date ?? null),
+    days_since_last_charge: daysSince(lastChargeRow?.entry_date ?? null),
+    miles_since_last_fuel: milesSinceFuel,
+    miles_since_last_charge: milesSinceCharge,
+    avg_daily_miles_30d: avgDailyMiles,
+    projected_next_fuel_date: projectedNextFuel,
+  };
+}
+
 export async function vehicleSummary(db: D1Database, vehicle: string) {
   const settings = await getVehicleSettings(db, vehicle);
   const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
