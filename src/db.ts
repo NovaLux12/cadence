@@ -346,7 +346,7 @@ export async function createVehicleEntry(db: D1Database, e: Partial<VehicleEntry
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
     )
     .bind(
-      e.vehicle ?? 'kuga',
+      e.vehicle ?? 'mycar',
       e.entry_type ?? 'fuel',
       e.entry_date ?? new Date().toISOString().slice(0, 10),
       e.odometer_miles ?? null,
@@ -372,7 +372,7 @@ export async function getVehicleSettings(db: D1Database, vehicle: string): Promi
 }
 
 export async function upsertVehicleSettings(db: D1Database, s: Partial<VehicleSettings>): Promise<VehicleSettings> {
-  const cur = await getVehicleSettings(db, s.vehicle ?? 'kuga');
+  const cur = await getVehicleSettings(db, s.vehicle ?? 'mycar');
   if (cur) {
     const merged = { ...cur, ...s, updated_at: new Date().toISOString() };
     await db
@@ -402,7 +402,7 @@ export async function upsertVehicleSettings(db: D1Database, s: Partial<VehicleSe
          VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
       )
       .bind(
-        s.vehicle ?? 'kuga',
+        s.vehicle ?? 'mycar',
         s.display_name ?? 'Untitled',
         s.reg_plate ?? null,
         s.fuel_type ?? null,

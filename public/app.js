@@ -364,8 +364,8 @@ function renderWatchlist() {
 
 async function loadVehicle() {
   const [{ items }, summary] = await Promise.all([
-    api('GET', '/api/vehicle/entries?vehicle=kuga'),
-    api('GET', '/api/vehicle/summary?vehicle=kuga'),
+    api('GET', '/api/vehicle/entries?vehicle=mycar'),
+    api('GET', '/api/vehicle/summary?vehicle=mycar'),
   ]);
   state.vehicleEntries = items;
   state.vehicleSummary = summary;
@@ -411,7 +411,7 @@ function renderVehicleSummary() {
     <div class="summary-tile">
       <h4>Odometer</h4>
       <div class="v">${s.current_odo_miles != null ? s.current_odo_miles : '—'}</div>
-      <div class="s">${s.reg_plate || 'kuga'}</div>
+      <div class="s">${s.reg_plate || 'mycar'}</div>
     </div>
   `;
 }
@@ -491,7 +491,7 @@ const SCHEMAS = {
       { key: 'status', label: 'Status', type: 'select', options: ['open', 'waiting', 'closed'] },
       { key: 'next_action_date', label: 'Next action date', type: 'date' },
       { key: 'next_action_label', label: 'Next action', type: 'text', placeholder: 'e.g. follow-up email' },
-      { key: 'parties', label: 'Parties', type: 'text', placeholder: 'Aviva / DWF / etc' },
+      { key: 'parties', label: 'Parties', type: 'text', placeholder: 'e.g. counterparty / solicitor' },
       { key: 'alert_windows', label: 'Alert windows (days, CSV)', type: 'text', default: '30,14,7,1' },
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],

@@ -168,7 +168,7 @@ app.delete('/api/watchlist/:id', async (c) => {
 // =========================================================
 
 app.get('/api/vehicle/entries', async (c) => {
-  const vehicle = c.req.query('vehicle') ?? 'kuga';
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
   const since = c.req.query('since') ?? undefined;
   const until = c.req.query('until') ?? undefined;
   const type = c.req.query('type') ?? undefined;
@@ -191,12 +191,12 @@ app.delete('/api/vehicle/entries/:id', async (c) => {
 });
 
 app.get('/api/vehicle/summary', async (c) => {
-  const vehicle = c.req.query('vehicle') ?? 'kuga';
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
   return c.json(await db.vehicleSummary(c.env.DB, vehicle));
 });
 
 app.get('/api/vehicle/settings', async (c) => {
-  const vehicle = c.req.query('vehicle') ?? 'kuga';
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
   const s = await db.getVehicleSettings(c.env.DB, vehicle);
   return s ? c.json(s) : c.json({ error: 'not found' }, 404);
 });
