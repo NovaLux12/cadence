@@ -23,6 +23,7 @@ export interface Subscription {
   vendor: string | null;
   category: string | null;
   cost_pence: number | null;
+  cost_pounds?: number | string | null;
   currency: string | null;
   billing_cycle: BillingCycle;
   next_due_date: string | null;
@@ -77,9 +78,12 @@ export interface VehicleEntry {
   entry_type: EntryType;
   entry_date: string;
   odometer_miles: number | null;
+  miles: number | null;
   kwh: number | null;
   litres: number | null;
   cost_pence: number;
+  cost_pounds?: number | string | null;
+  unit_price?: number | null;
   unit: string | null;
   location: string | null;
   is_home_charge: number;
@@ -105,6 +109,7 @@ export interface DashboardRow {
   kind: 'subscription' | 'reminder' | 'watchlist';
   id: number;
   title: string;
+  vendor: string | null;
   category: string | null;
   status: string;
   due_date: string | null;

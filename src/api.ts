@@ -190,6 +190,117 @@ app.delete('/api/vehicle/entries/:id', async (c) => {
   return ok ? c.json({ deleted: true }) : c.json({ error: 'not found' }, 404);
 });
 
+// =========================================================
+// Vehicle — Fuelly CSV import
+// =========================================================
+
+/**
+ * Parse a Fuelly-style CSV (RFC 4180-ish, supports quoted fields with commas).
+ * Returns rows as objects keyed by header.
+ */
+function parseCSV(text: string): Record<string, string>[] {
+  const lines: string[][] = [];
+  let cur: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        field += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        cur.push(field);
+        field = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (field !== '' || cur.length) {
+          cur.push(field);
+          lines.push(cur);
+          cur = [];
+          field = '';
+        }
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+      } else {
+        field += ch;
+      }
+    }
+  }
+  if (field !== '' || cur.length) {
+    cur.push(field);
+    lines.push(cur);
+  }
+  if (lines.length < 2) return [];
+  const headers = lines[0].map((h) => h.trim());
+  return lines.slice(1).map((row) => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, idx) => (obj[h] = (row[idx] ?? '').trim()));
+    return obj;
+  });
+}
+
+interface ImportResult {
+  total: number;
+  inserted: number;
+  skipped: number;
+  errors: { row: number; reason: string }[];
+}
+
+app.post('/api/vehicle/import-fuelly', async (c) => {
+  const deny = requireAuth(c);
+  if (deny) return deny;
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
+  const dryRun = c.req.query('dry') === '1';
+  const csv = await c.req.text();
+  const rows = parseCSV(csv);
+  const result: ImportResult = { total: rows.length, inserted: 0, skipped: 0, errors: [] };
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const date = r.fuelup_date || r.entry_date || r.date;
+    const litres = parseFloat(r.litres);
+    const price = parseFloat(r.price); // £/L
+    const odometer = parseFloat(r.odometer);
+    if (!date || isNaN(litres) || litres <= 0) {
+      result.skipped++;
+      result.errors.push({ row: i + 2, reason: 'missing date or litres' });
+      continue;
+    }
+    const costPounds = (isNaN(price) ? 0 : litres * price);
+    const location = r.notes || r.location || null;
+    const unit = !isNaN(price) ? `p/litre @ ${Math.round(price * 100)}` : null;
+    if (dryRun) {
+      result.inserted++;
+      continue;
+    }
+    try {
+      await db.createVehicleEntry(c.env.DB, {
+        vehicle,
+        entry_type: 'fuel',
+        entry_date: date,
+        odometer_miles: !isNaN(odometer) ? Math.round(odometer) : null,
+        miles: !isNaN(parseFloat(r.miles)) ? parseFloat(r.miles) : null,
+        litres,
+        cost_pounds: costPounds,
+        unit,
+        location,
+        is_home_charge: 0,
+        notes: null,
+      });
+      result.inserted++;
+    } catch (err) {
+      result.errors.push({ row: i + 2, reason: String(err) });
+    }
+  }
+  return c.json(result);
+});
+
 app.get('/api/vehicle/summary', async (c) => {
   const vehicle = c.req.query('vehicle') ?? 'mycar';
   return c.json(await db.vehicleSummary(c.env.DB, vehicle));

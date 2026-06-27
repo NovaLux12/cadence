@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS vehicle_entries (
   entry_type TEXT NOT NULL,               -- fuel | charge
   entry_date TEXT NOT NULL,               -- ISO date
   odometer_miles INTEGER,
+  miles REAL,                             -- miles driven since last entry (for MPG / pence-per-mile)
   kwh REAL,                               -- for charge entries
   litres REAL,                            -- for fuel entries
   cost_pence INTEGER NOT NULL,

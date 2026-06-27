@@ -119,16 +119,16 @@ a { color: var(--accent); }
 .subhead { font-size: 14px; font-weight: 600; color: var(--text-dim); margin: 18px 0 10px; text-transform: uppercase; letter-spacing: 0.06em; }
 
 /* === Cards === */
-.card-list { display: flex; flex-direction: column; gap: 10px; }
+.card-list { display: flex; flex-direction: column; gap: 6px; }
 
 .card {
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   transition: border-color 0.15s;
 }
 .card:active { border-color: var(--border-strong); }
@@ -136,17 +136,49 @@ a { color: var(--accent); }
 .card.soon    { border-left: 3px solid var(--yellow); }
 .card.upcoming { border-left: 3px solid var(--green); }
 
-.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.card-title { font-weight: 600; font-size: 15px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.card-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.vendor-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: -0.02em;
+}
+.vendor-avatar.fuel { background: var(--accent-soft); color: var(--accent); }
+.vendor-avatar.charge { background: var(--green-soft); color: var(--green); }
+.vendor-avatar.subscription { background: var(--blue-soft); color: var(--blue); }
+.vendor-avatar.reminder { background: var(--green-soft); color: var(--green); }
+.vendor-avatar.watchlist { background: var(--yellow-soft); color: var(--yellow); }
+
 .card-kind {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
   background: var(--bg-elev-2);
   color: var(--text-dim);
+  flex-shrink: 0;
 }
 .card-kind.subscription { background: var(--blue-soft); color: var(--blue); }
 .card-kind.reminder     { background: var(--green-soft); color: var(--green); }
@@ -154,26 +186,36 @@ a { color: var(--accent); }
 .card-kind.charge       { background: var(--green-soft); color: var(--green); }
 .card-kind.fuel         { background: var(--accent-soft); color: var(--accent); }
 
-.card-meta {
+.card-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  color: var(--text-dim);
-  font-size: 13px;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
 }
-.card-meta b { color: var(--text); font-weight: 500; }
+.card-row .label { color: var(--text-dim); }
+.card-row .value { color: var(--text); font-weight: 500; }
+.card-row .urgent { color: var(--red); font-weight: 600; }
 
-.card-due { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--text-dim); }
-.card-due .urgent { color: var(--red); font-weight: 600; }
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+.card-grid > div { display: flex; justify-content: space-between; gap: 6px; }
+.card-grid .label { color: var(--text-dim); }
+.card-grid .value { color: var(--text); font-weight: 500; }
 
 .card-notes {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.4;
 }
 
-.card-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
 
 /* === Buttons === */
 .btn {
@@ -266,9 +308,15 @@ a { color: var(--accent); }
 .empty {
   text-align: center;
   color: var(--text-dim);
-  padding: 40px 16px;
+  padding: 32px 16px;
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
 }
+.empty p { margin: 0; }
+.empty-sub { font-size: 13px; color: var(--text-dimmer); }
 
 .hidden { display: none !important; }
 
