@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Cadence</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <span class="brand-name">Cadence</span>
+    </div>
+    <div class="brand-meta" id="meta">·</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-tab="dashboard" aria-selected="true">Due</button>
+    <button class="tab" data-tab="subscriptions">Subs</button>
+    <button class="tab" data-tab="reminders">Reminders</button>
+    <button class="tab" data-tab="watchlist">Watch</button>
+    <button class="tab" data-tab="vehicle">Kuga</button>
+  </nav>
+
+  <main id="app">
+    <section id="tab-dashboard" class="tab-panel active">
+      <div class="panel-header">
+        <h2>Upcoming</h2>
+        <div class="panel-sub">Next 60 days · <span id="due-count">…</span></div>
+      </div>
+      <div id="dashboard-list" class="card-list"></div>
+      <div class="empty hidden" id="dashboard-empty">Nothing due in the next 60 days.</div>
+    </section>
+
+    <section id="tab-subscriptions" class="tab-panel">
+      <div class="panel-header">
+        <h2>Subscriptions</h2>
+        <button class="btn btn-primary" data-add="subscription">+ Add</button>
+      </div>
+      <div id="subscription-list" class="card-list"></div>
+      <div class="empty hidden" id="subscription-empty">No subscriptions yet.</div>
+    </section>
+
+    <section id="tab-reminders" class="tab-panel">
+      <div class="panel-header">
+        <h2>Reminders</h2>
+        <button class="btn btn-primary" data-add="reminder">+ Add</button>
+      </div>
+      <div id="reminder-list" class="card-list"></div>
+      <div class="empty hidden" id="reminder-empty">No reminders yet.</div>
+    </section>
+
+    <section id="tab-watchlist" class="tab-panel">
+      <div class="panel-header">
+        <h2>Watchlist</h2>
+        <button class="btn btn-primary" data-add="watchlist">+ Add</button>
+      </div>
+      <div id="watchlist-list" class="card-list"></div>
+      <div class="empty hidden" id="watchlist-empty">Nothing on the watchlist.</div>
+    </section>
+
+    <section id="tab-vehicle" class="tab-panel">
+      <div class="panel-header">
+        <h2>Kuga PHEV</h2>
+        <button class="btn btn-primary" data-add="vehicle-entry">+ Log</button>
+      </div>
+
+      <div class="summary-grid" id="vehicle-summary">…</div>
+
+      <h3 class="subhead">Recent entries</h3>
+      <div id="vehicle-list" class="card-list"></div>
+    </section>
+  </main>
+
+  <!-- Modal for add/edit -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div id="modal" class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Edit</h3>
+        <button class="btn-icon" id="modal-close" aria-label="Close">✕</button>
+      </div>
+      <form id="modal-form" class="modal-form"></form>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save" type="submit" form="modal-form">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

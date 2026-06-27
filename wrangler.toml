@@ -1,0 +1,30 @@
+name = "cadence"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database (created via `wrangler d1 create cadence-db`)
+[[d1_databases]]
+binding = "DB"
+database_name = "cadence-db"
+database_id = "REPLACE_WITH_REAL_DB_ID"
+
+# Cron trigger — daily at 07:30 UTC (~08:30 BST) for alert dispatch
+[triggers]
+crons = ["30 7 * * *"]
+
+# Static assets for the SPA frontend
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Environment variables (non-secret)
+[vars]
+ENVIRONMENT = "production"
+APP_NAME = "Cadence"
+APP_URL = "https://cadence.jacklee.co.uk"
+
+# Secrets (set via `wrangler secret put`):
+# - TELEGRAM_BOT_TOKEN
+# - TELEGRAM_CHAT_ID
+# - AUTH_TOKEN (bearer for write endpoints)
