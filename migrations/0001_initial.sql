@@ -70,7 +70,7 @@ CREATE INDEX idx_wl_next_action ON watchlist(next_action_date);
 -- =========================================================
 CREATE TABLE IF NOT EXISTS vehicle_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  vehicle TEXT NOT NULL DEFAULT 'kuga',
+  vehicle TEXT NOT NULL DEFAULT 'mycar',
   entry_type TEXT NOT NULL,               -- fuel | charge
   entry_date TEXT NOT NULL,               -- ISO date
   odometer_miles INTEGER,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS vehicle_entries (
   litres REAL,                            -- for fuel entries
   cost_pence INTEGER NOT NULL,
   unit TEXT,                              -- for fuel: 'p/litre'; for charge: 'p/kWh'
-  location TEXT,                          -- pump name / Easee charger id / Outfox rate
+  location TEXT,                          -- e.g. forecourt name or charger label
   is_home_charge INTEGER DEFAULT 0,       -- 0/1 — affects cost calc (home vs away)
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

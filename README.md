@@ -2,13 +2,12 @@
 
 > Personal recurring items tracker with smart alerts. One dashboard for everything that has a due date.
 
-A self-hosted Cloudflare Worker + D1 app for tracking the recurring stuff that
-currently lives scattered across `USER.md`, mental notes, and the backs of
-envelopes: subscriptions, cadence reminders, active cases/watchlist, and
-vehicle running costs. Telegram alerts at 30/14/7/1 days out.
+A self-hosted Cloudflare Worker + D1 app for tracking the recurring stuff
+that has a due date — subscriptions, cadence reminders, active cases and
+watchlist items, and per-vehicle running costs. Optional Telegram alerts
+at 30/14/7/1 days out.
 
-Built by [Nova Lux](https://github.com/NovaLux12) as a personal utility for
-[Jack Lee](https://github.com/carme99). Open source, MIT.
+Built by [Nova Lux](https://github.com/NovaLux12). Open source, MIT.
 
 ---
 
@@ -17,10 +16,10 @@ Built by [Nova Lux](https://github.com/NovaLux12) as a personal utility for
 | Tab | Use for |
 |---|---|
 | **Due** | What's coming up in the next 60 days, across all categories. The "open this once a day" view. |
-| **Subs** | Recurring paid services (Fastmail, 1Password, iCloud, Lex Autolease, etc.) with cost, cycle, status. |
-| **Reminders** | Rotating cadence tasks (NHS prepayment, MOT, dental, contact lenses, CB1 order, etc.). One-tap "✓ Done" advances the schedule. |
-| **Watch** | Active cases & contracts (Aviva/DWF subrogation, lease end, NHS HCL journey, etc.). |
-| **Kuga** | Ford Kuga PHEV fuel + charge entries. Computes 30d/90d £/mile, MPG, home vs away split. |
+| **Subs** | Recurring paid services (cloud, email, storage, leases, etc.) with cost, cycle, status. |
+| **Reminders** | Rotating cadence tasks (annual renewals, quarterly maintenance, etc.). One-tap "✓ Done" advances the schedule. |
+| **Watch** | Active cases, contracts, and decisions awaiting action. |
+| **Vehicle** | Fuel + charge entries. Computes 30d/90d £/mile, MPG, home vs away split. |
 
 ---
 
@@ -31,18 +30,18 @@ Built by [Nova Lux](https://github.com/NovaLux12) as a personal utility for
 │  Browser SPA │───▶│ Cloudflare Worker    │───▶│ D1 SQL   │
 │  (vanilla JS)│    │ (Hono + TypeScript)  │    │ (data)   │
 └──────────────┘    └──────────┬───────────┘    └──────────┘
-                              │ cron 07:30 UTC
+                              │ cron (configurable)
                               ▼
                        ┌──────────────┐
-                       │ Telegram API │
+                       │ Telegram API │  (optional)
                        └──────────────┘
 ```
 
 - **Worker**: TypeScript + Hono, `src/index.ts`
 - **Storage**: Cloudflare D1 (SQLite) — `migrations/0001_initial.sql`
 - **Frontend**: Vanilla JS SPA in `public/` (mobile-first, no framework)
-- **Alerts**: Daily cron → finds items in alert windows → Telegram via `sendMessage`
-- **Auth**: Bearer `AUTH_TOKEN` on write endpoints (read is public for now; can be tightened with Cloudflare Access)
+- **Alerts**: Cron → finds items in alert windows → Telegram via `sendMessage`
+- **Auth**: Bearer `AUTH_TOKEN` on write endpoints (read is public by default; can be tightened with Cloudflare Access)
 
 ---
 
@@ -54,15 +53,15 @@ Requires Node 20+ and `wrangler` 4.x.
 # Install deps
 npm install
 
-# Create local D1 and apply migrations + seed
+# Create local D1 and apply migrations + demo seed
 npx wrangler d1 migrations apply cadence-db --local
 npx wrangler d1 execute cadence-db --local --file=./seed.sql
 
-# Create local secrets
+# Create local secrets (not committed)
 cat > .dev.vars <<EOF
-AUTH_TOKEN=dev-token-test-abc123
+AUTH_TOKEN=***
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
+***
 EOF
 
 # Run the dev server
@@ -75,9 +74,13 @@ Hit it:
 ```bash
 curl http://127.0.0.1:8787/api/health
 curl http://127.0.0.1:8787/api/dashboard?days=60
-curl -X POST -H "authorization: Bearer dev-token-test-abc123" \
+curl -X POST -H "authorization: Bearer dev-to…c123" \
      http://127.0.0.1:8787/api/alerts/run?dry=1
 ```
+
+The included `seed.sql` ships with placeholder items so the dashboard
+isn't empty on first boot. Replace them via the UI once you've
+deployed.
 
 ---
 
@@ -90,21 +93,26 @@ Requires a Cloudflare account with Workers + D1 enabled.
 npx wrangler d1 create cadence-db
 # → copy the database_id into wrangler.toml ([[d1_databases]] database_id = "...")
 
-# Apply migrations + seed to remote D1
+# Apply migrations + demo seed to remote D1
 npx wrangler d1 migrations apply cadence-db --remote
 npx wrangler d1 execute cadence-db --remote --file=./seed.sql
 
 # Set secrets (do NOT commit these)
 npx wrangler secret put AUTH_TOKEN            # any random 32+ char string
-npx wrangler secret put TELEGRAM_BOT_TOKEN    # from @BotFather
-npx wrangler secret put TELEGRAM_CHAT_ID      # your chat id (e.g. 123456789)
+npx wrangler secret put TELEGRAM_BOT_TOKEN    # from @BotFather (optional)
+npx wrangler secret put TELEGRAM_CHAT_ID      # your chat id (optional)
 
 # Deploy
 npx wrangler deploy
 
-# Bind a custom domain (e.g. cadence.jacklee.co.uk)
+# Bind a custom domain (e.g. cadence.example.com)
 # Cloudflare dashboard → Workers → cadence → Settings → Triggers → Custom Domains
 ```
+
+The repo also ships with a one-shot script (`scripts/deploy.sh`) that
+handles D1 create + migrate + seed + secrets + deploy in order. See
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) for a
+GitHub Actions auto-deploy on push to `master`.
 
 ---
 
@@ -133,8 +141,8 @@ Read endpoints are public. Write endpoints require `Authorization: Bearer $AUTH_
 | `GET`    | `/api/vehicle/entries` | List (filter by vehicle, since, until, type) |
 | `POST`   | `/api/vehicle/entries` | Create |
 | `DELETE` | `/api/vehicle/entries/:id` | Delete |
-| `GET`    | `/api/vehicle/summary?vehicle=kuga` | 30d/90d rollup + pence/mile + MPG |
-| `GET`    | `/api/vehicle/settings?vehicle=kuga` | Get |
+| `GET`    | `/api/vehicle/summary?vehicle=mycar` | 30d/90d rollup + pence/mile + MPG |
+| `GET`    | `/api/vehicle/settings?vehicle=mycar` | Get |
 | `PUT`    | `/api/vehicle/settings` | Upsert |
 | `POST`   | `/api/alerts/run?days=60&dry=1` | Manual alert dispatch (dry-run or send) |
 | `POST`   | `/api/alerts/test` | Send a single test message to Telegram |
@@ -174,16 +182,8 @@ Marking done advances it.
 ## Lessons learned (filed 2026-06-27)
 
 - **SQLite UNION + ORDER BY**: wrap the union in a subquery `SELECT * FROM (...) ORDER BY ...` — SQLite refuses column-references in outer ORDER BY against a UNION because of strict type/column-naming rules. The symptom is a confusing "1st ORDER BY term does not match any column in the result set" error.
-- **Auth via env vs `.dev.vars`**: `wrangler dev` reads secrets from `.dev.vars` (gitignored), NOT from the shell env. Setting `AUTH_TOKEN=...` before `wrangler dev` does nothing for the worker — put it in `.dev.vars`.
-- **Asset SPA fallback**: Cloudflare Workers `[assets]` returns 404 for unknown paths; serve `index.html` manually as a fallback so client-side routes work.
-
----
-
-## Related
-
-- [NovaLux12/agent-card](https://github.com/NovaLux12/agent-card) — machine-readable identity
-- [NovaLux12/operating-notes](https://github.com/NovaLux12/operating-notes) — public distill of durable patterns
-- [NovaLux12/case-studies](https://github.com/NovaLux12/case-studies) — narrative case studies
+- **Auth via env vs `.dev.vars`**: `wrangler dev` reads secrets from `.dev.vars` (gitignored), NOT from the shell env. Setting `AUTH_TOKEN=*** before `wrangler dev` does nothing for the worker — put it in `.dev.vars`.
+- **Asset SPA fallback**: Cloudflare Workers `[assets]` returns 404 for unknown paths; use `not_found_handling = "single-page-application"` in `[assets]` so the platform serves `index.html` automatically. (An older alternative is a manual fallback in the Worker's fetch handler.)
 
 ---
 

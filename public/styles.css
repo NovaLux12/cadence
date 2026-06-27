@@ -245,7 +245,7 @@ a { color: var(--accent); }
   .modal { border-radius: 18px; border: 1px solid var(--border); }
 }
 
-/* === Summary grid (Kuga) === */
+/* === Summary grid (Vehicle) === */
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
