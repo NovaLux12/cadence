@@ -690,9 +690,67 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
   const settings = await getVehicleSettings(db, vehicle);
   const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
   const since90 = new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10);
+  const sinceAll = '1970-01-01';
   const last30 = await vehicleWindow(db, vehicle, since30);
-  // For 90d we only need totals
-  const last90: VehicleWindow = (await vehicleWindow(db, vehicle, since90));
+  const last90 = await vehicleWindow(db, vehicle, since90);
+  const all = await vehicleWindow(db, vehicle, sinceAll);
+
+  // Last fill (most recent fuel entry)
+  const lastFuel = await db
+    .prepare(
+      `SELECT entry_date, odometer_miles, miles, litres, cost_pence, unit, location
+       FROM vehicle_entries
+       WHERE vehicle=? AND entry_type='fuel'
+       ORDER BY entry_date DESC, id DESC LIMIT 1`
+    )
+    .bind(vehicle)
+    .first<{
+      entry_date: string; odometer_miles: number | null; miles: number | null;
+      litres: number | null; cost_pence: number; unit: string | null; location: string | null;
+    }>();
+  // Last charge
+  const lastCharge = await db
+    .prepare(
+      `SELECT entry_date, kwh, cost_pence, location
+       FROM vehicle_entries
+       WHERE vehicle=? AND entry_type='charge'
+       ORDER BY entry_date DESC, id DESC LIMIT 1`
+    )
+    .bind(vehicle)
+    .first<{ entry_date: string; kwh: number | null; cost_pence: number; location: string | null }>();
+
+  // Monthly trend (last 6 months): total £ per month
+  const trendResult = await db
+    .prepare(
+      `SELECT substr(entry_date, 1, 7) AS month,
+              SUM(CASE WHEN entry_type='fuel' THEN cost_pence ELSE 0 END) AS fuel_pence,
+              SUM(CASE WHEN entry_type='charge' THEN cost_pence ELSE 0 END) AS charge_pence,
+              SUM(cost_pence) AS total_pence,
+              SUM(miles) AS miles
+       FROM vehicle_entries
+       WHERE vehicle=? AND entry_date >= date('now', '-6 months')
+       GROUP BY substr(entry_date, 1, 7)
+       ORDER BY month ASC`
+    )
+    .bind(vehicle)
+    .all<{ month: string; fuel_pence: number; charge_pence: number; total_pence: number; miles: number }>();
+  const trend = trendResult?.results ?? [];
+
+  // EV vs petrol mile split (all time)
+  const evMiles = all.charge_pence > 0
+    ? (await db
+        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='charge'`)
+        .bind(vehicle)
+        .first<{ m: number }>())?.m ?? 0
+    : 0;
+  const petrolMiles = all.fuel_pence > 0
+    ? (await db
+        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='fuel'`)
+        .bind(vehicle)
+        .first<{ m: number }>())?.m ?? 0
+    : 0;
+  const totalMiles = evMiles + petrolMiles;
+
   return {
     vehicle,
     display_name: settings?.display_name ?? vehicle,
@@ -706,5 +764,17 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
       total_pence: last90.total_pence,
       pence_per_mile: last90.pence_per_mile,
     },
+    all_time: {
+      fuel_pence: all.fuel_pence,
+      charge_pence: all.charge_pence,
+      total_pence: all.total_pence,
+      ev_miles: evMiles,
+      petrol_miles: petrolMiles,
+      total_miles: totalMiles,
+      ev_pct: totalMiles > 0 ? evMiles / totalMiles : 0,
+    },
+    last_fuel: lastFuel ?? null,
+    last_charge: lastCharge ?? null,
+    trend,
   };
 }
