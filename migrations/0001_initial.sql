@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS vehicle_entries (
   unit TEXT,                              -- for fuel: 'p/litre'; for charge: 'p/kWh'
   location TEXT,                          -- e.g. forecourt name or charger label
   is_home_charge INTEGER DEFAULT 0,       -- 0/1 — affects cost calc (home vs away)
+  ignored INTEGER NOT NULL DEFAULT 0,     -- 1 = exclude from aggregates (bad data / outlier)
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

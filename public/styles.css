@@ -445,6 +445,45 @@ a { color: var(--accent); }
 .empty p { margin: 0; }
 .empty-sub { font-size: 13px; color: var(--text-dimmer); }
 
+/* === Filter chips === */
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 10px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.filter-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-load-more {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+}
+
+.card.ignored {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.card.ignored .card-title { text-decoration: line-through; text-decoration-color: var(--text-dimmer); }
+.kind-chip.ignored-badge {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 /* === Entry view (read-only info modal) === */
 
 .entry-view-head {
