@@ -572,49 +572,6 @@ $('#easee-backfill')?.addEventListener('click', async () => {
   }
 });
 
-function renderVehicleSummary() {
-  const s = state.vehicleSummary;
-  const el = $('#vehicle-summary');
-  if (!s) {
-    el.textContent = '—';
-    return;
-  }
-  const a = s.last_30d;
-  const b = s.last_90d;
-  el.innerHTML = `
-    <div class="summary-tile">
-      <h4>30d spend</h4>
-      <div class="v">${fmtGBP(a.total_pence)}</div>
-      <div class="s">${a.total_miles != null ? `${a.total_miles} miles` : 'no odo data'}</div>
-    </div>
-    <div class="summary-tile">
-      <h4>30d £/mile</h4>
-      <div class="v">${a.pence_per_mile != null ? (a.pence_per_mile / 100).toFixed(2) : '—'}</div>
-      <div class="s">all costs (fuel + charge)</div>
-    </div>
-    <div class="summary-tile">
-      <h4>30d fuel</h4>
-      <div class="v">${fmtGBP(a.fuel_pence)}</div>
-      <div class="s">${a.fuel_litres.toFixed(1)} L · ${a.fuel_mpg ? a.fuel_mpg.toFixed(1) + ' MPG' : '—'}</div>
-    </div>
-    <div class="summary-tile">
-      <h4>30d charge</h4>
-      <div class="v">${fmtGBP(a.charge_pence)}</div>
-      <div class="s">${a.charge_kwh.toFixed(1)} kWh · ${fmtGBP(a.home_charge_pence)} home</div>
-    </div>
-    <div class="summary-tile">
-      <h4>90d spend</h4>
-      <div class="v">${fmtGBP(b.total_pence)}</div>
-      <div class="s">${b.pence_per_mile != null ? (b.pence_per_mile / 100).toFixed(2) + ' £/mile' : '—'}</div>
-    </div>
-    <div class="summary-tile">
-      <h4>Odometer</h4>
-      <div class="v">${s.current_odo_miles != null ? s.current_odo_miles : '—'}</div>
-      <div class="s">${s.reg_plate || 'mycar'}</div>
-    </div>
-  `;
-}
-
 function renderVehicleEntries() {
   const list = $('#vehicle-list');
   list.innerHTML = '';
@@ -639,15 +596,93 @@ function renderVehicleEntries() {
       <div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>
       ${e.notes ? `<div class="card-notes">${escapeHtml(e.notes)}</div>` : ''}
     `;
-    card.addEventListener('click', async (ev) => {
+    card.addEventListener('click', (ev) => {
       if (ev.target.closest('button')) return;
-      if (!confirm(`Delete this ${e.entry_type} entry?`)) return;
-      await api('DELETE', `/api/vehicle/entries/${e.id}`);
-      toast('Deleted');
-      loadVehicle();
+      openVehicleEntryView(e);
     });
     list.appendChild(card);
   }
+}
+
+/**
+ * Read-only info modal for a vehicle entry. Shows all fields; has
+ * Edit + Delete actions. Edit closes the view and opens the edit
+ * modal for the same entry; Delete confirms then removes.
+ */
+function openVehicleEntryView(entry) {
+  const e = entry;
+  const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
+  const isFuel = e.entry_type === 'fuel';
+  const rows = [];
+  rows.push({ label: 'Date', value: fmtDate(e.entry_date) });
+  if (isFuel && e.litres) {
+    const pencePerL = e.cost_pence / e.litres;
+    rows.push({ label: 'Litres', value: `${e.litres.toFixed(2)} L` });
+    rows.push({ label: 'Cost / litre', value: `${(pencePerL / 100).toFixed(3)} £/L` });
+  }
+  if (!isFuel && e.kwh) {
+    const pencePerK = e.cost_pence / e.kwh;
+    rows.push({ label: 'Energy', value: `${e.kwh.toFixed(2)} kWh` });
+    rows.push({ label: 'Cost / kWh', value: `${(pencePerK / 100).toFixed(2)} £/kWh` });
+  }
+  rows.push({ label: 'Total cost', value: fmtGBP(e.cost_pence) });
+  if (e.odometer_miles) rows.push({ label: 'Odometer', value: `${e.odometer_miles} mi` });
+  if (e.miles) rows.push({ label: 'Miles since last', value: `+${Math.round(e.miles)} mi` });
+  if (e.location) rows.push({ label: 'Location', value: e.location });
+  if (e.is_home_charge) rows.push({ label: 'Charge type', value: 'home' });
+  if (e.unit) rows.push({ label: 'Unit price', value: e.unit });
+  if (e.notes) rows.push({ label: 'Notes', value: e.notes });
+
+  const html = `
+    <div class="entry-view-head">
+      <span class="vendor-avatar ${e.entry_type} large">${icon}</span>
+      <div>
+        <div class="entry-view-title">${isFuel ? 'Fuel' : 'Charge'} entry</div>
+        <div class="entry-view-sub">${fmtDate(e.entry_date)}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
+      </div>
+    </div>
+    <div class="entry-view-grid">
+      ${rows.map((r) => `
+        <div class="entry-view-row">
+          <span class="entry-view-label">${r.label}</span>
+          <span class="entry-view-value">${escapeHtml(String(r.value))}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const form = $('#modal-form');
+  form.innerHTML = html;
+  $('#modal-title').textContent = `${isFuel ? '⛽ Fuel' : '⚡ Charge'} · ${fmtDate(e.entry_date)}`;
+  $('#modal-save').hidden = true;
+  $('#modal-cancel').textContent = 'Close';
+
+  const actions = $('.modal-actions');
+  actions.innerHTML = '';
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn btn-secondary';
+  editBtn.textContent = 'Edit';
+  editBtn.onclick = () => openModal('vehicle-entry', e);
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn btn-danger';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.onclick = async () => {
+    if (!confirm(`Delete this ${e.entry_type} entry?`)) return;
+    await api('DELETE', `/api/vehicle/entries/${e.id}`);
+    toast('Deleted');
+    closeModal();
+    loadVehicle();
+  };
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-primary';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = closeModal;
+  actions.appendChild(editBtn);
+  actions.appendChild(deleteBtn);
+  actions.appendChild(closeBtn);
+
+  state.modal = { kind: 'vehicle-entry-view', item: e };
+  $('#modal-backdrop').classList.remove('hidden');
 }
 
 // =========================================================
