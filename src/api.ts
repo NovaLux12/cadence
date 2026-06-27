@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from './types';
 import * as db from './db';
 import { batchTelegram, formatAlert, sendTelegram } from './alerts';
-import { syncEasee, getLiveCharging } from './easee';
+import { syncEasee, getLiveCharging, backfillEasee } from './easee';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -391,6 +391,17 @@ app.post('/api/easee/sync', async (c) => {
   const vehicle = c.req.query('vehicle') ?? 'mycar';
   const dry = c.req.query('dry') === '1';
   const result = await syncEasee(c.env, { vehicle, dryRun: dry });
+  return c.json(result);
+});
+
+app.post('/api/easee/backfill', async (c) => {
+  const deny = requireAuth(c);
+  if (deny) return deny;
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
+  const fromIso = c.req.query('from');
+  const toIso = c.req.query('to');
+  const dry = c.req.query('dry') === '1';
+  const result = await backfillEasee(c.env, { vehicle, fromIso, toIso, dryRun: dry });
   return c.json(result);
 });
 

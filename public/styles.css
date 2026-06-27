@@ -380,36 +380,56 @@ a { color: var(--accent); }
   font-weight: 700;
   color: var(--green);
   flex-shrink: 0;
+  text-align: right;
+  line-height: 1;
+  min-width: 80px;
 }
 
 /* Inline chart (sparkline) */
 .spark-chart {
   width: 100%;
-  height: 60px;
+  height: 70px;
   display: block;
 }
-.spark-chart .spark-line {
+.spark-chart .spark-line-fuel {
   fill: none;
   stroke: var(--accent);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.spark-chart .spark-area {
-  fill: var(--accent-soft);
-  stroke: none;
+.spark-chart .spark-line-elec {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.spark-chart .spark-dot {
-  fill: var(--accent);
-}
+.spark-chart .spark-dot-fuel { fill: var(--accent); }
+.spark-chart .spark-dot-elec { fill: var(--green); }
 .spark-labels {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 10px;
   color: var(--text-dimmer);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   margin-top: 2px;
 }
+.spark-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.spark-legend .dot-fuel, .spark-legend .dot-elec {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin: 0 2px 0 4px;
+}
+.spark-legend .dot-fuel { background: var(--accent); }
+.spark-legend .dot-elec { background: var(--green); }
 
 /* === Empty state === */
 .empty {

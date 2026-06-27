@@ -452,31 +452,37 @@ function renderVehicleSummary(s) {
 
 function renderSparkChart(trend) {
   // trend is [{month, fuel_pence, charge_pence, total_pence, miles}, ...]
-  const w = 320, h = 60, pad = 4;
-  const data = trend.map((d) => ({ x: d.month, y: d.total_pence, m: d.miles ?? 0 }));
-  const maxY = Math.max(1, ...data.map((d) => d.y));
-  const minY = 0;
-  const xStep = (w - pad * 2) / Math.max(1, data.length - 1);
-  const points = data.map((d, i) => {
+  const w = 320, h = 70, pad = 4;
+  const maxY = Math.max(1, ...trend.map((d) => d.fuel_pence + d.charge_pence));
+  const xStep = (w - pad * 2) / Math.max(1, trend.length - 1);
+  const project = (val, i) => {
     const x = pad + i * xStep;
-    const y = h - pad - ((d.y - minY) / (maxY - minY)) * (h - pad * 2);
-    return { x, y, d };
-  });
-  // Build path
-  const linePath = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${h - pad} L ${points[0].x} ${h - pad} Z`;
+    const y = h - pad - (val / maxY) * (h - pad * 2);
+    return { x, y };
+  };
+  // Build paths for fuel (accent) and electricity (green)
+  const fuelPoints = trend.map((d, i) => project(d.fuel_pence, i));
+  const elecPoints = trend.map((d, i) => project(d.charge_pence, i));
+  const fuelPath = fuelPoints.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+  const elecPath = elecPoints.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+  const totalPence = trend.reduce((a, d) => a + d.fuel_pence + d.charge_pence, 0);
+  const totalMiles = trend.reduce((a, d) => a + (d.miles ?? 0), 0);
+  const ppm = totalMiles > 0 ? totalPence / totalMiles / 100 : null;
   return `
     <div class="summary-tile" style="grid-column: span 2;">
-      <h4>6-month spend</h4>
+      <h4>6-month spend · fuel vs electric</h4>
       <svg class="spark-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-        <path class="spark-area" d="${areaPath}" />
-        <path class="spark-line" d="${linePath}" />
-        ${points.map((p) => `<circle class="spark-dot" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
+        <path class="spark-line-elec" d="${elecPath}" />
+        <path class="spark-line-fuel" d="${fuelPath}" />
+        ${elecPoints.map((p) => `<circle class="spark-dot-elec" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
+        ${fuelPoints.map((p) => `<circle class="spark-dot-fuel" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
       </svg>
       <div class="spark-labels">
-        <span>${data[0]?.x ?? ''}</span>
-        <span>${data[data.length - 1]?.x ?? ''}</span>
+        <span>${trend[0]?.month ?? ''}</span>
+        <span class="spark-legend"><span class="dot-fuel"></span>fuel <span class="dot-elec"></span>electric</span>
+        <span>${trend[trend.length - 1]?.month ?? ''}</span>
       </div>
+      <div class="s">total ${fmtGBP(totalPence)} · ${totalMiles ? totalMiles + ' mi · ' + (ppm).toFixed(2) + ' £/mi' : 'no odo'}</div>
     </div>
   `;
 }
@@ -499,19 +505,38 @@ function renderEasee(status, live) {
   if (banner) {
     if (live && live.session && live.session.sessionEnergy != null) {
       banner.hidden = false;
+      const cost = live.session.costIncludingVat ?? live.session.costExcludingVat;
+      const pencePerKwh = live.session.pricePrKwhIncludingVat ?? live.session.pricePerKwhExcludingVat;
+      const duration = live.session.chargeDurationInSeconds;
+      const durText = duration ? formatDuration(duration) : '';
       banner.innerHTML = `
         <div class="live-charge-pulse"></div>
         <div class="live-charge-body">
           <div class="live-charge-title">⚡ Charging now — ${escapeHtml(live.charger?.name ?? 'Easee')}</div>
-          <div class="live-charge-sub">${live.session.sessionEnergy.toFixed(2)} kWh delivered</div>
+          <div class="live-charge-sub">
+            ${live.session.sessionEnergy.toFixed(2)} kWh delivered
+            ${durText ? ' · ' + durText : ''}
+            ${pencePerKwh != null ? ' · ' + (pencePerKwh * 100).toFixed(0) + 'p/kWh' : ''}
+          </div>
         </div>
-        <div class="live-charge-stat">${live.session.sessionEnergy.toFixed(1)}<span style="font-size:12px;font-weight:400;opacity:0.7"> kWh</span></div>
+        <div class="live-charge-stat">
+          ${cost != null ? '£' + cost.toFixed(2) : '£–'}
+          <div style="font-size:10px;font-weight:400;opacity:0.7;text-align:right">running cost</div>
+        </div>
       `;
     } else {
       banner.hidden = true;
       banner.innerHTML = '';
     }
   }
+}
+
+function formatDuration(s) {
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.round(s / 60) + 'min';
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  return h + 'h ' + m + 'm';
 }
 
 $('#easee-sync')?.addEventListener('click', async () => {
@@ -526,7 +551,24 @@ $('#easee-sync')?.addEventListener('click', async () => {
     toast(`Error: ${e.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Sync now';
+    btn.textContent = 'Sync';
+  }
+});
+
+$('#easee-backfill')?.addEventListener('click', async () => {
+  if (!confirm('Backfill historical Easee sessions (last 6 months)?')) return;
+  const btn = $('#easee-backfill');
+  btn.disabled = true;
+  btn.textContent = 'Backfilling…';
+  try {
+    const r = await api('POST', '/api/easee/backfill?vehicle=mycar');
+    toast(`Backfill: fetched ${r.fetched}, ${r.inserted} new, ${r.skipped} already had`);
+    loadVehicle();
+  } catch (e) {
+    toast(`Error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Backfill';
   }
 });
 
