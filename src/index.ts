@@ -1,5 +1,6 @@
 // Cadence — Worker entry point
 import api, { runAlerts } from './api';
+import { syncEasee } from './easee';
 import type { Env } from './types';
 
 export default {
@@ -27,15 +28,35 @@ export default {
     return new Response('Not Found', { status: 404 });
   },
 
-  // Daily cron — run alerts
+  // Cron — daily 07:30 UTC. Runs alerts + Easee sync.
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const cronTag = event.cron ?? 'unknown';
+    console.log(`[cron] firing for schedule=${cronTag}`);
+
+    // Alert dispatch
     ctx.waitUntil(
       (async () => {
         try {
           const result = await runAlerts(env, 60, false);
-          console.log('[cron] alerts result:', JSON.stringify(result));
+          console.log('[cron] alerts:', JSON.stringify(result));
         } catch (err) {
           console.error('[cron] alerts failed:', err);
+        }
+      })()
+    );
+
+    // Easee sync (no-op until credentials configured)
+    ctx.waitUntil(
+      (async () => {
+        if (!env.EASEE_USERNAME || !env.EASEE_PASSWORD) {
+          console.log('[cron] easee skipped (credentials not set)');
+          return;
+        }
+        try {
+          const result = await syncEasee(env, { vehicle: 'mycar' });
+          console.log('[cron] easee:', JSON.stringify(result));
+        } catch (err) {
+          console.error('[cron] easee failed:', err);
         }
       })()
     );

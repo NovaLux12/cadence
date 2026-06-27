@@ -13,8 +13,6 @@ database_id = "8de7a002-f28e-467d-9651-49ce3a7e93e8"
 # Custom domain — bound via the Workers Custom Domains feature
 [triggers]
 crons = ["30 7 * * *"]
-
-# Worker domains (Custom Domains, no DNS changes needed)
 workers_dev = true
 
 # Static assets for the SPA frontend
@@ -34,3 +32,4 @@ APP_URL = "https://cadence.jacklee.co.uk"
 # - TELEGRAM_BOT_TOKEN
 # - TELEGRAM_CHAT_ID
 # - AUTH_TOKEN (bearer for write endpoints)
+# - EASEE_USERNAME / EASEE_PASSWORD (for live charging session sync)

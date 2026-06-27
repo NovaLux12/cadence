@@ -415,15 +415,48 @@ function renderWatchlist() {
 // =========================================================
 
 async function loadVehicle() {
-  const [{ items }, summary] = await Promise.all([
+  const [{ items }, summary, easee] = await Promise.all([
     api('GET', '/api/vehicle/entries?vehicle=mycar'),
     api('GET', '/api/vehicle/summary?vehicle=mycar'),
+    api('GET', '/api/easee/status'),
   ]);
   state.vehicleEntries = items;
   state.vehicleSummary = summary;
   renderVehicleSummary();
   renderVehicleEntries();
+  renderEasee(easee);
 }
+
+function renderEasee(status) {
+  const el = $('#easee-status');
+  const btn = $('#easee-sync');
+  if (!el || !btn) return;
+  if (status?.configured) {
+    el.textContent = 'connected';
+    el.className = 'easee-status ok';
+    btn.hidden = false;
+  } else {
+    el.textContent = 'not connected — add EASEE_USERNAME + EASEE_PASSWORD secrets';
+    el.className = 'easee-status err';
+    btn.hidden = true;
+  }
+}
+
+$('#easee-sync')?.addEventListener('click', async () => {
+  const btn = $('#easee-sync');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  try {
+    const r = await api('POST', '/api/easee/sync?vehicle=mycar');
+    toast(`Easee: ${r.inserted} new, ${r.skipped} skipped`);
+    loadVehicle();
+  } catch (e) {
+    toast(`Error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync now';
+  }
+});
 
 function renderVehicleSummary() {
   const s = state.vehicleSummary;

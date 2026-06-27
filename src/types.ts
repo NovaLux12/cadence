@@ -10,6 +10,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   AUTH_TOKEN?: string;
+  EASEE_USERNAME?: string;
+  EASEE_PASSWORD?: string;
 }
 
 // Domain types — match migrations/0001_initial.sql
