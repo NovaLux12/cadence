@@ -1,0 +1,49 @@
+name: Deploy Cadence
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4
+
+      - name: Apply D1 migrations (remote)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler d1 migrations apply cadence-db --remote
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
+
+      - name: Smoke-test deployed URL
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::warning::APP_URL var not set — skipping curl smoke-test"
+            exit 0
+          fi
+          echo "Curl-testing $APP_URL/api/health ..."
+          for i in 1 2 3 4 5; do
+            if curl -fsSL "$APP_URL/api/health"; then
+              echo " ✓ Health OK"
+              break
+            fi
+            sleep 3
+          done

@@ -17,6 +17,8 @@ crons = ["30 7 * * *"]
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# SPA fallback — serve index.html for unknown routes that aren't /api/*
+not_found_handling = "single-page-application"
 
 # Environment variables (non-secret)
 [vars]
