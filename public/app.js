@@ -149,6 +149,13 @@ async function loadDashboard() {
   const { rows } = await api('GET', '/api/dashboard?days=60');
   const list = $('#dashboard-list');
   const empty = $('#dashboard-empty');
+  // Override server-computed days_until with local-TZ computation, so the
+  // grouping and urgency pills match the user's wall-clock. Server's UTC
+  // `date('now')` lags ~1h behind London midnight, which made "due
+  // today" items appear as "due tomorrow" right after midnight BST.
+  for (const r of rows) {
+    if (r.due_date) r.days_until = daysFromNow(r.due_date);
+  }
   $('#due-count').textContent = `${rows.length} item${rows.length === 1 ? '' : 's'}`;
   list.innerHTML = '';
   if (rows.length === 0) {
