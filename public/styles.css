@@ -467,6 +467,84 @@ a { color: var(--accent); }
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* === Vehicle search === */
+.vehicle-search {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  min-height: 44px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.vehicle-search::placeholder { color: var(--text-dimmer); }
+.vehicle-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+}
+
+/* === Select-mode toggle (extra chip) === */
+.filter-chip.select-toggle {
+  margin-left: auto;
+}
+
+/* === Card with leading checkbox (select mode) === */
+.card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.card .card-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.card .card-checkbox + .card-row1 {
+  padding-left: 30px;
+}
+
+/* === Floating bulk-action bar (above safe-area) === */
+.bulk-bar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + var(--safe-bottom));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.bulk-bar.hidden { display: none; }
+.bulk-bar-count {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bulk-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.bulk-bar-actions .btn { min-height: 36px; }
 .btn-load-more {
   display: block;
   width: 100%;

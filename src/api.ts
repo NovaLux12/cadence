@@ -173,11 +173,12 @@ app.get('/api/vehicle/entries', async (c) => {
   const since = c.req.query('since') ?? undefined;
   const until = c.req.query('until') ?? undefined;
   const type = c.req.query('type') ?? undefined;
+  const q = c.req.query('q') ?? undefined;
   const includeIgnored = c.req.query('includeIgnored') === '1';
   const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined;
   const offset = c.req.query('offset') ? Number(c.req.query('offset')) : undefined;
   return c.json({
-    items: await db.listVehicleEntries(c.env.DB, { vehicle, since, until, type, includeIgnored, limit, offset }),
+    items: await db.listVehicleEntries(c.env.DB, { vehicle, since, until, type, q, includeIgnored, limit, offset }),
   });
 });
 
@@ -201,6 +202,40 @@ app.post('/api/vehicle/entries/:id/toggle-ignored', async (c) => {
   if (deny) return deny;
   const updated = await db.toggleIgnored(c.env.DB, Number(c.req.param('id')));
   return updated ? c.json(updated) : c.json({ error: 'not found' }, 404);
+});
+
+/**
+ * Bulk action on vehicle entries — currently only `ignore` / `restore`.
+ * Force-sets the ignored flag for every id in the payload (idempotent).
+ * Auth-gated like other writes.
+ */
+app.post('/api/vehicle/bulk-action', async (c) => {
+  const deny = requireAuth(c);
+  if (deny) return deny;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    action?: string;
+    ids?: unknown;
+  };
+  if (body.action !== 'ignore' && body.action !== 'restore') {
+    return c.json({ error: "action must be 'ignore' or 'restore'" }, 400);
+  }
+  const ids = Array.isArray(body.ids) ? body.ids : [];
+  const numericIds = ids
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  const ignored: 0 | 1 = body.action === 'ignore' ? 1 : 0;
+  const errors: string[] = [];
+  let updated = 0;
+  for (const id of numericIds) {
+    try {
+      const ok = await db.setIgnored(c.env.DB, id, ignored);
+      if (ok) updated++;
+      else errors.push(`id ${id} not found`);
+    } catch (err) {
+      errors.push(`id ${id}: ${(err as Error).message}`);
+    }
+  }
+  return c.json({ updated, errors });
 });
 
 // =========================================================

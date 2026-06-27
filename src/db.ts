@@ -350,7 +350,7 @@ export async function deleteWatchlist(db: D1Database, id: number): Promise<boole
 
 export async function listVehicleEntries(
   db: D1Database,
-  opts: { vehicle?: string; since?: string; until?: string; type?: string; includeIgnored?: boolean; limit?: number; offset?: number } = {}
+  opts: { vehicle?: string; since?: string; until?: string; type?: string; q?: string; includeIgnored?: boolean; limit?: number; offset?: number } = {}
 ): Promise<VehicleEntry[]> {
   const where: string[] = [];
   const binds: unknown[] = [];
@@ -369,6 +369,11 @@ export async function listVehicleEntries(
   if (opts.type) {
     where.push('entry_type = ?');
     binds.push(opts.type);
+  }
+  if (opts.q && opts.q.trim()) {
+    const needle = `${opts.q.trim()}%`;
+    where.push('(location LIKE ? OR notes LIKE ?)');
+    binds.push(needle, needle);
   }
   if (!opts.includeIgnored) {
     where.push('ignored = 0');
@@ -417,6 +422,18 @@ export async function toggleIgnored(db: D1Database, id: number): Promise<Vehicle
   const next = cur.ignored ? 0 : 1;
   await db.prepare('UPDATE vehicle_entries SET ignored=? WHERE id=?').bind(next, id).run();
   return db.prepare('SELECT * FROM vehicle_entries WHERE id=?').bind(id).first<VehicleEntry>();
+}
+
+/**
+ * Force-set the ignored flag on a vehicle entry (idempotent — bulk use).
+ * Returns true if a row was updated, false if the id was not found.
+ */
+export async function setIgnored(db: D1Database, id: number, ignored: 0 | 1): Promise<boolean> {
+  const r = await db
+    .prepare('UPDATE vehicle_entries SET ignored=? WHERE id=?')
+    .bind(ignored, id)
+    .run();
+  return (r.meta?.changes ?? 0) > 0;
 }
 
 export async function deleteVehicleEntry(db: D1Database, id: number): Promise<boolean> {

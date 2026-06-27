@@ -12,7 +12,9 @@ const state = {
   vehicleEntries: [],
   vehicleSummary: null,
   vehicleLimit: 30,
-  vehicleFilters: { type: '', showIgnored: false },
+  vehicleFilters: { type: '', q: '', showIgnored: false },
+  vehicleSelectMode: false,
+  vehicleSelectedIds: new Set(),
   authToken: localStorage.getItem('cadence.auth') || '',
   modal: null,
 };
@@ -361,12 +363,11 @@ function renderWatchlist() {
 
 // =========================================================
 // Vehicle
-// =========================================================
-
 async function loadVehicle() {
   // Build query string from current filters
   const qs = new URLSearchParams({ vehicle: 'mycar' });
   if (state.vehicleFilters.type) qs.set('type', state.vehicleFilters.type);
+  if (state.vehicleFilters.q) qs.set('q', state.vehicleFilters.q);
   if (state.vehicleFilters.showIgnored) qs.set('includeIgnored', '1');
   qs.set('limit', String(state.vehicleLimit));
   const [entries, summary, easee, live] = await Promise.all([
@@ -383,23 +384,55 @@ async function loadVehicle() {
   renderEasee(easee, live);
 }
 
+// Debounce helper — trailing-edge, single timer per key.
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 function renderVehicleFilterChips() {
   const el = $('#vehicle-filter-chips');
   if (!el) return;
   const f = state.vehicleFilters;
   el.innerHTML = `
-    <button class="filter-chip${!f.type ? ' active' : ''}" data-filter="all">All</button>
+    <button class="filter-chip${!f.type && !f.showIgnored ? ' active' : ''}" data-filter="all">All</button>
     <button class="filter-chip${f.type === 'fuel' ? ' active' : ''}" data-filter="fuel">⛽ Fuel</button>
     <button class="filter-chip${f.type === 'charge' ? ' active' : ''}" data-filter="charge">⚡ Charge</button>
     <button class="filter-chip${f.showIgnored ? ' active' : ''}" data-filter="ignored">Hidden</button>
+    <button class="filter-chip select-toggle${state.vehicleSelectMode ? ' active' : ''}" data-filter="select">${state.vehicleSelectMode ? '✓ Selecting' : 'Select'}</button>
   `;
+  // Keep the search input value in sync if the filter was reset programmatically.
+  const search = $('#vehicle-search');
+  if (search && search.value !== f.q) search.value = f.q;
 }
+
+// Debounced search reload — 250ms after the last keystroke.
+const debouncedSearchReload = debounce(() => {
+  state.vehicleLimit = 30;
+  loadVehicle();
+}, 250);
+
+$('#vehicle-search')?.addEventListener('input', (ev) => {
+  state.vehicleFilters.q = ev.target.value;
+  debouncedSearchReload();
+});
 
 document.addEventListener('click', (ev) => {
   const chip = ev.target.closest('.filter-chip');
   if (!chip) return;
   const f = state.vehicleFilters;
   const v = chip.dataset.filter;
+  if (v === 'select') {
+    state.vehicleSelectMode = !state.vehicleSelectMode;
+    state.vehicleSelectedIds.clear();
+    renderBulkBar();
+    renderVehicleFilterChips();
+    renderVehicleEntries();
+    return;
+  }
   if (v === 'all') { f.type = ''; f.showIgnored = false; }
   else if (v === 'fuel' || v === 'charge') { f.type = v; }
   else if (v === 'ignored') { f.showIgnored = !f.showIgnored; }
@@ -615,10 +648,13 @@ function renderVehicleEntries() {
   const more = $('#vehicle-load-more');
   list.innerHTML = '';
   const items = state.vehicleEntries;
+  const selectMode = state.vehicleSelectMode;
   for (const e of items) {
     const card = document.createElement('div');
     card.className = 'card';
     if (e.ignored) card.classList.add('ignored');
+    const checked = state.vehicleSelectedIds.has(e.id);
+    if (selectMode && checked) card.classList.add('selected');
     const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
     const metaBits = [];
     metaBits.push(`<span class="meta-cost">${fmtGBP(e.cost_pence)}</span>`);
@@ -629,7 +665,11 @@ function renderVehicleEntries() {
     if (e.location) metaBits.push(`<span>${escapeHtml(e.location)}</span>`);
     if (e.is_home_charge) metaBits.push(`<span class="kind-chip charge">home</span>`);
     if (e.ignored) metaBits.push(`<span class="kind-chip ignored-badge">ignored</span>`);
+    const checkbox = selectMode
+      ? `<input type="checkbox" class="card-checkbox" data-id="${e.id}" ${checked ? 'checked' : ''} aria-label="Select entry">`
+      : '';
     card.innerHTML = `
+      ${checkbox}
       <div class="card-row1">
         <span class="vendor-avatar ${e.entry_type}">${icon}</span>
         <div class="card-title">${e.entry_type === 'fuel' ? 'Fuel' : 'Charge'}${e.location ? ` · ${escapeHtml(e.location)}` : ''}</div>
@@ -638,15 +678,86 @@ function renderVehicleEntries() {
       <div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>
       ${e.notes ? `<div class="card-notes">${escapeHtml(e.notes)}</div>` : ''}
     `;
-    card.addEventListener('click', (ev) => {
-      if (ev.target.closest('button')) return;
-      openVehicleEntryView(e);
-    });
+    if (selectMode) {
+      card.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        toggleSelection(e.id);
+      });
+    } else {
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('button')) return;
+        openVehicleEntryView(e);
+      });
+    }
     list.appendChild(card);
   }
   // Show "Load more" if we returned a full page (means there's likely more)
   if (more) more.hidden = items.length < state.vehicleLimit;
 }
+
+function toggleSelection(id) {
+  if (state.vehicleSelectedIds.has(id)) state.vehicleSelectedIds.delete(id);
+  else state.vehicleSelectedIds.add(id);
+  // Update the affected card in-place + the count badge.
+  const card = document.querySelector(`#vehicle-list .card input[data-id="${id}"]`)?.closest('.card');
+  if (card) {
+    const cb = card.querySelector('.card-checkbox');
+    if (cb) cb.checked = state.vehicleSelectedIds.has(id);
+    card.classList.toggle('selected', state.vehicleSelectedIds.has(id));
+  }
+  renderBulkBar();
+}
+
+function renderBulkBar() {
+  const bar = $('#vehicle-bulk-bar');
+  const count = $('#vehicle-bulk-count');
+  if (!bar) return;
+  const n = state.vehicleSelectedIds.size;
+  if (count) count.textContent = String(n);
+  const show = state.vehicleSelectMode && n > 0;
+  bar.classList.toggle('hidden', !show);
+}
+
+async function bulkAction(action) {
+  const ids = Array.from(state.vehicleSelectedIds);
+  if (ids.length === 0) return;
+  const ignoreBtn = $('#vehicle-bulk-ignore');
+  const restoreBtn = $('#vehicle-bulk-restore');
+  const cancelBtn = $('#vehicle-bulk-cancel');
+  if (ignoreBtn) ignoreBtn.disabled = true;
+  if (restoreBtn) restoreBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  try {
+    const res = await api('POST', '/api/vehicle/bulk-action', { action, ids });
+    const verb = action === 'ignore' ? 'Ignored' : 'Restored';
+    if (res.errors && res.errors.length) {
+      toast(`${verb} ${res.updated} · ${res.errors.length} error(s)`);
+    } else {
+      toast(`${verb} ${res.updated}`);
+    }
+    // Exit select mode + refresh.
+    state.vehicleSelectMode = false;
+    state.vehicleSelectedIds.clear();
+    renderBulkBar();
+    loadVehicle();
+  } catch (err) {
+    toast(`Bulk ${action} failed: ${err.message}`);
+  } finally {
+    if (ignoreBtn) ignoreBtn.disabled = false;
+    if (restoreBtn) restoreBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+  }
+}
+
+$('#vehicle-bulk-ignore')?.addEventListener('click', () => bulkAction('ignore'));
+$('#vehicle-bulk-restore')?.addEventListener('click', () => bulkAction('restore'));
+$('#vehicle-bulk-cancel')?.addEventListener('click', () => {
+  state.vehicleSelectMode = false;
+  state.vehicleSelectedIds.clear();
+  renderBulkBar();
+  renderVehicleFilterChips();
+  renderVehicleEntries();
+});
 
 function loadMoreEntries() {
   state.vehicleLimit += 30;
