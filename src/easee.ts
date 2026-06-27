@@ -112,6 +112,34 @@ export async function latestSession(env: Env, chargerId: string, token: string):
   return ongoing && ongoing.sessionId ? ongoing : null;
 }
 
+/** Get all completed sessions for a charger in a date range (from/to as YYYY-MM-DD). */
+export async function sessionsInRange(env: Env, chargerId: string, fromIso: string, toIso: string, token: string): Promise<EaseeSession[]> {
+  const r = await authedGet(env, `/sessions/charger/${chargerId}/sessions/${fromIso}/${toIso}`, token);
+  if (!r.ok) {
+    console.error('[easee] sessions range failed', r.status, await r.text());
+    return [];
+  }
+  const data = (await r.json()) as any[] | null;
+  if (!Array.isArray(data)) return [];
+  // Normalize historical endpoint field names to canonical EaseeSession shape.
+  // Historical uses: carConnected, carDisconnected, kiloWattHours, actualDurationSeconds, id
+  // Latest uses:     sessionStart,    sessionEnd,        sessionEnergy,     chargeDurationInSeconds, sessionId
+  return data.map((s) => ({
+    chargerId: s.chargerId ?? chargerId,
+    sessionId: s.sessionId ?? s.id,
+    sessionStart: s.sessionStart ?? s.carConnected,
+    sessionEnd: s.sessionEnd ?? s.carDisconnected,
+    sessionEnergy: s.sessionEnergy ?? s.kiloWattHours ?? 0,
+    chargeDurationInSeconds: s.chargeDurationInSeconds ?? s.actualDurationSeconds,
+    costIncludingVat: s.costIncludingVat,
+    costExcludingVat: s.costExcludingVat,
+    pricePrKwhIncludingVat: s.pricePrKwhIncludingVat,
+    pricePerKwhExcludingVat: s.pricePerKwhExcludingVat,
+    vatPercentage: s.vatPercentage,
+    currencyId: s.currencyId,
+  }));
+}
+
 /**
  * Pull the latest session for every charger the user has access to and insert
  * any new ones into vehicle_entries. Idempotent: dedupes on (vehicle, session_id).
@@ -169,6 +197,88 @@ export async function syncEasee(env: Env, opts: { vehicle?: string; dryRun?: boo
     } catch (err) {
       result.errors.push(`charger ${c.id}: ${String(err)}`);
     }
+  }
+  return result;
+}
+
+/**
+ * Backfill historical Easee sessions in chunks to avoid hitting the API
+ * with a giant date range. Iterates monthly chunks from `fromIso` to `toIso`.
+ */
+export async function backfillEasee(env: Env, opts: {
+  vehicle?: string;
+  fromIso?: string;     // YYYY-MM-DD; default = 6 months ago
+  toIso?: string;       // YYYY-MM-DD; default = today
+  dryRun?: boolean;
+} = {}): Promise<{
+  chargers: number;
+  fetched: number;
+  inserted: number;
+  skipped: number;
+  errors: string[];
+}> {
+  const result = { chargers: 0, fetched: 0, inserted: 0, skipped: 0, errors: [] as string[] };
+  const token = await login(env);
+  if (!token) {
+    result.errors.push('easee credentials not configured');
+    return result;
+  }
+  const chargers = await listChargers(env, token);
+  result.chargers = chargers.length;
+  const today = new Date().toISOString().slice(0, 10);
+  const toIso = opts.toIso ?? today;
+  const fromIso = opts.fromIso ?? (() => {
+    const d = new Date();
+    d.setUTCMonth(d.getUTCMonth() - 6);
+    return d.toISOString().slice(0, 10);
+  })();
+  // Walk month by month.
+  let cursor = new Date(fromIso + 'T00:00:00Z');
+  const end = new Date(toIso + 'T00:00:00Z');
+  while (cursor <= end) {
+    const chunkStart = cursor.toISOString().slice(0, 10);
+    const next = new Date(cursor);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const chunkEnd = (next > end ? end : next).toISOString().slice(0, 10);
+    for (const c of chargers) {
+      const sessions = await sessionsInRange(env, c.id, chunkStart, chunkEnd, token);
+      result.fetched += sessions.length;
+      for (const session of sessions) {
+        const existing = await env.DB
+          .prepare(`SELECT id FROM vehicle_entries WHERE vehicle=? AND notes LIKE ? LIMIT 1`)
+          .bind(opts.vehicle ?? 'mycar', `easee-session-${session.sessionId}%`)
+          .first<{ id: number }>();
+        if (existing) {
+          result.skipped++;
+          continue;
+        }
+        if (opts.dryRun) {
+          result.inserted++;
+          continue;
+        }
+        try {
+          const costPounds = session.costIncludingVat ?? session.costExcludingVat ?? 0;
+          const unit = session.pricePrKwhIncludingVat ?? session.pricePerKwhExcludingVat
+            ? `p/kWh @ ${Math.round((session.pricePrKwhIncludingVat ?? session.pricePerKwhExcludingVat ?? 0) * 100)}`
+            : null;
+          await db.createVehicleEntry(env.DB, {
+            vehicle: opts.vehicle ?? 'mycar',
+            entry_type: 'charge',
+            entry_date: (session.sessionEnd ?? session.sessionStart).slice(0, 10),
+            kwh: session.sessionEnergy,
+            cost_pounds: costPounds,
+            unit,
+            location: `Easee ${c.name ?? c.id}`,
+            is_home_charge: 1,
+            notes: `easee-session-${session.sessionId} · ${session.chargeDurationInSeconds ?? '?'}s · ${c.name ?? c.id}`,
+          });
+          result.inserted++;
+        } catch (err) {
+          result.errors.push(`session ${session.sessionId}: ${String(err)}`);
+        }
+      }
+    }
+    cursor = next;
   }
   return result;
 }
