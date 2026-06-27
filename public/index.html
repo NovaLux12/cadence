@@ -97,6 +97,7 @@
       </div>
 
       <h3 class="subhead">Recent entries</h3>
+      <input type="search" id="vehicle-search" class="vehicle-search" placeholder="Search location or notes…" autocomplete="off" />
       <div id="vehicle-filter-chips" class="filter-chips"></div>
       <div id="vehicle-list" class="card-list"></div>
       <button class="btn btn-secondary btn-load-more" id="vehicle-load-more" hidden>Load more</button>
@@ -107,6 +108,16 @@
       </div>
     </section>
   </main>
+
+  <!-- Floating bulk-action bar (vehicle tab, select mode) -->
+  <div id="vehicle-bulk-bar" class="bulk-bar hidden" role="region" aria-label="Bulk actions">
+    <span class="bulk-bar-count"><span id="vehicle-bulk-count">0</span> selected</span>
+    <div class="bulk-bar-actions">
+      <button class="btn btn-secondary btn-small" id="vehicle-bulk-cancel">Cancel</button>
+      <button class="btn btn-secondary btn-small" id="vehicle-bulk-restore">Restore</button>
+      <button class="btn btn-primary btn-small" id="vehicle-bulk-ignore">Ignore</button>
+    </div>
+  </div>
 
   <!-- Modal for add/edit -->
   <div id="modal-backdrop" class="modal-backdrop hidden">
