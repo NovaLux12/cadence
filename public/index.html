@@ -97,8 +97,11 @@
       </div>
 
       <h3 class="subhead">Recent entries</h3>
-      <input type="search" id="vehicle-search" class="vehicle-search" placeholder="Search location or notes…" autocomplete="off" />
       <div id="vehicle-filter-chips" class="filter-chips"></div>
+      <div class="search-wrap">
+        <input type="search" id="vehicle-search" class="vehicle-search" placeholder="Search location or notes…" aria-label="Search vehicle entries" autocomplete="off" spellcheck="false">
+        <button type="button" id="vehicle-search-clear" class="search-clear" aria-label="Clear search" hidden>✕</button>
+      </div>
       <div id="vehicle-list" class="card-list"></div>
       <button class="btn btn-secondary btn-load-more" id="vehicle-load-more" hidden>Load more</button>
       <div class="empty hidden" id="vehicle-empty">

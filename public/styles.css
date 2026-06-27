@@ -557,10 +557,56 @@ a { color: var(--accent); }
   border-style: dashed;
 }
 .card.ignored .card-title { text-decoration: line-through; text-decoration-color: var(--text-dimmer); }
+/* When a user is actively selecting an ignored entry, drop the dashed
+   style so the accent border reads cleanly. The selection state is the
+   more important visual at that moment. */
+.card.ignored.selected {
+  border-style: solid;
+  opacity: 0.9;
+}
 .kind-chip.ignored-badge {
   background: var(--red-soft);
   color: var(--red);
 }
+
+/* === Search input (vehicle) === */
+.search-wrap {
+  position: relative;
+  margin: 0 0 10px;
+}
+.search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 36px 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+}
+.search-input::placeholder { color: var(--text-dimmer); }
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.search-clear:active { background: var(--border-strong); color: var(--text); }
 
 /* === Entry view (read-only info modal) === */
 

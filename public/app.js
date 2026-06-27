@@ -384,6 +384,22 @@ async function loadVehicle() {
   renderEasee(easee, live);
 }
 
+/**
+ * Refetch only the entries list (not summary / easee / live). Used when
+ * the change (e.g. search query) doesn't affect any aggregate state.
+ * Cheaper and avoids spurious UI re-renders on the summary tiles.
+ */
+async function reloadVehicleEntriesOnly() {
+  const qs = new URLSearchParams({ vehicle: 'mycar' });
+  if (state.vehicleFilters.type) qs.set('type', state.vehicleFilters.type);
+  if (state.vehicleFilters.q) qs.set('q', state.vehicleFilters.q);
+  if (state.vehicleFilters.showIgnored) qs.set('includeIgnored', '1');
+  qs.set('limit', String(state.vehicleLimit));
+  const r = await api('GET', `/api/vehicle/entries?${qs.toString()}`);
+  state.vehicleEntries = r.items;
+  renderVehicleEntries();
+}
+
 // Debounce helper — trailing-edge, single timer per key.
 function debounce(fn, ms) {
   let t = null;
@@ -398,26 +414,53 @@ function renderVehicleFilterChips() {
   if (!el) return;
   const f = state.vehicleFilters;
   el.innerHTML = `
-    <button class="filter-chip${!f.type && !f.showIgnored ? ' active' : ''}" data-filter="all">All</button>
-    <button class="filter-chip${f.type === 'fuel' ? ' active' : ''}" data-filter="fuel">⛽ Fuel</button>
-    <button class="filter-chip${f.type === 'charge' ? ' active' : ''}" data-filter="charge">⚡ Charge</button>
-    <button class="filter-chip${f.showIgnored ? ' active' : ''}" data-filter="ignored">Hidden</button>
-    <button class="filter-chip select-toggle${state.vehicleSelectMode ? ' active' : ''}" data-filter="select">${state.vehicleSelectMode ? '✓ Selecting' : 'Select'}</button>
+    <button class="filter-chip${!f.type && !f.showIgnored ? ' active' : ''}" data-filter="all" aria-pressed="${!f.type && !f.showIgnored}">All</button>
+    <button class="filter-chip${f.type === 'fuel' ? ' active' : ''}" data-filter="fuel" aria-pressed="${f.type === 'fuel'}">⛽ Fuel</button>
+    <button class="filter-chip${f.type === 'charge' ? ' active' : ''}" data-filter="charge" aria-pressed="${f.type === 'charge'}">⚡ Charge</button>
+    <button class="filter-chip${f.showIgnored ? ' active' : ''}" data-filter="ignored" aria-pressed="${f.showIgnored}">Hidden</button>
+    <button class="filter-chip select-toggle${state.vehicleSelectMode ? ' active' : ''}" data-filter="select" aria-pressed="${state.vehicleSelectMode}" aria-label="Toggle selection mode">${state.vehicleSelectMode ? '✓ Selecting' : 'Select'}</button>
   `;
   // Keep the search input value in sync if the filter was reset programmatically.
   const search = $('#vehicle-search');
   if (search && search.value !== f.q) search.value = f.q;
+  // Also keep the X clear button visibility in sync.
+  const clearBtn = $('#vehicle-search-clear');
+  if (clearBtn) clearBtn.hidden = !f.q;
 }
 
 // Debounced search reload — 250ms after the last keystroke.
+// Only the entries list changes when q changes (summary / easee / live
+// don't depend on the query), so use the lighter refetch path.
 const debouncedSearchReload = debounce(() => {
   state.vehicleLimit = 30;
-  loadVehicle();
+  // Clear selection — selected ids may not be visible under the new filter.
+  state.vehicleSelectedIds.clear();
+  reloadVehicleEntriesOnly();
+  renderBulkBar();
+  renderVehicleFilterChips();
 }, 250);
 
 $('#vehicle-search')?.addEventListener('input', (ev) => {
   state.vehicleFilters.q = ev.target.value;
+  // Toggle the X button visibility based on input length.
+  const clearBtn = $('#vehicle-search-clear');
+  if (clearBtn) clearBtn.hidden = !ev.target.value;
   debouncedSearchReload();
+});
+
+$('#vehicle-search-clear')?.addEventListener('click', () => {
+  const input = $('#vehicle-search');
+  if (!input) return;
+  input.value = '';
+  state.vehicleFilters.q = '';
+  const clearBtn = $('#vehicle-search-clear');
+  if (clearBtn) clearBtn.hidden = true;
+  state.vehicleSelectedIds.clear();
+  state.vehicleLimit = 30;
+  reloadVehicleEntriesOnly();
+  renderBulkBar();
+  renderVehicleFilterChips();
+  input.focus();
 });
 
 document.addEventListener('click', (ev) => {
@@ -433,6 +476,10 @@ document.addEventListener('click', (ev) => {
     renderVehicleEntries();
     return;
   }
+  // Any filter change invalidates the current selection — selected ids
+  // may have dropped out of view, leaving the bulk bar pointing at
+  // rows the user can no longer see.
+  state.vehicleSelectedIds.clear();
   if (v === 'all') { f.type = ''; f.showIgnored = false; }
   else if (v === 'fuel' || v === 'charge') { f.type = v; }
   else if (v === 'ignored') { f.showIgnored = !f.showIgnored; }
