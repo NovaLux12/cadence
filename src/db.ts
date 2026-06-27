@@ -439,6 +439,19 @@ export async function setIgnored(db: D1Database, id: number, ignored: 0 | 1): Pr
   return (r.meta?.changes ?? 0) > 0;
 }
 
+/**
+ * Bulk set the ignored flag for many ids in a single UPDATE. Atomic.
+ * Returns the number of rows actually updated.
+ */
+export async function bulkSetIgnored(db: D1Database, ids: number[], ignored: 0 | 1): Promise<number> {
+  if (ids.length === 0) return 0;
+  // D1/SQLite supports `WHERE id IN (?, ?, …)` with any number of placeholders.
+  const placeholders = ids.map(() => '?').join(', ');
+  const sql = `UPDATE vehicle_entries SET ignored=? WHERE id IN (${placeholders})`;
+  const r = await db.prepare(sql).bind(ignored, ...ids).run();
+  return r.meta?.changes ?? 0;
+}
+
 export async function deleteVehicleEntry(db: D1Database, id: number): Promise<boolean> {
   const r = await db.prepare('DELETE FROM vehicle_entries WHERE id=?').bind(id).run();
   return (r.meta?.changes ?? 0) > 0;

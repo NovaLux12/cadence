@@ -209,6 +209,9 @@ app.post('/api/vehicle/entries/:id/toggle-ignored', async (c) => {
  * Force-sets the ignored flag for every id in the payload (idempotent).
  * Auth-gated like other writes.
  */
+// Cap on bulk-action ids — any real bulk operation is well under this.
+const BULK_IDS_MAX = 500;
+
 app.post('/api/vehicle/bulk-action', async (c) => {
   const deny = requireAuth(c);
   if (deny) return deny;
@@ -219,23 +222,29 @@ app.post('/api/vehicle/bulk-action', async (c) => {
   if (body.action !== 'ignore' && body.action !== 'restore') {
     return c.json({ error: "action must be 'ignore' or 'restore'" }, 400);
   }
-  const ids = Array.isArray(body.ids) ? body.ids : [];
-  const numericIds = ids
+  if (!Array.isArray(body.ids)) {
+    return c.json({ error: 'ids must be an array' }, 400);
+  }
+  if (body.ids.length > BULK_IDS_MAX) {
+    return c.json({ error: `too many ids (max ${BULK_IDS_MAX})` }, 400);
+  }
+  const numericIds = (body.ids as unknown[])
     .map((n) => Number(n))
     .filter((n) => Number.isInteger(n) && n > 0);
   const ignored: 0 | 1 = body.action === 'ignore' ? 1 : 0;
-  const errors: string[] = [];
+  // Single UPDATE … WHERE id IN (?, ?, …) — atomic, one round-trip.
   let updated = 0;
-  for (const id of numericIds) {
-    try {
-      const ok = await db.setIgnored(c.env.DB, id, ignored);
-      if (ok) updated++;
-      else errors.push(`id ${id} not found`);
-    } catch (err) {
-      errors.push(`id ${id}: ${(err as Error).message}`);
-    }
+  try {
+    updated = await db.bulkSetIgnored(c.env.DB, numericIds, ignored);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
   }
-  return c.json({ updated, errors });
+  // Surface ids that didn't actually update (not found / no change).
+  const errors: string[] = [];
+  if (updated < numericIds.length) {
+    errors.push(`${numericIds.length - updated} id(s) not found or unchanged`);
+  }
+  return c.json({ updated, total: numericIds.length, errors });
 });
 
 // =========================================================
