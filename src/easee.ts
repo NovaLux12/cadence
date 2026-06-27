@@ -67,6 +67,29 @@ async function authedGet(env: Env, path: string, token: string): Promise<Respons
   });
 }
 
+export async function getOngoingSession(env: Env, chargerId: string, token: string): Promise<EaseeSession | null> {
+  const r = await authedGet(env, `/chargers/${chargerId}/sessions/ongoing`, token);
+  if (!r.ok) return null;
+  const body = (await r.json()) as EaseeSession | null;
+  return body && body.sessionId ? body : null;
+}
+
+/** Get live state for every charger (the charger that's currently charging, if any). */
+export async function getLiveCharging(env: Env): Promise<{
+  charger: EaseeCharger | null;
+  session: EaseeSession | null;
+  configured: boolean;
+}> {
+  const token = await login(env);
+  if (!token) return { charger: null, session: null, configured: false };
+  const chargers = await listChargers(env, token);
+  for (const c of chargers) {
+    const s = await getOngoingSession(env, c.id, token);
+    if (s) return { charger: c, session: s, configured: true };
+  }
+  return { charger: null, session: null, configured: true };
+}
+
 export async function listChargers(env: Env, token: string): Promise<EaseeCharger[]> {
   const r = await authedGet(env, '/chargers', token);
   if (!r.ok) {

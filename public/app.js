@@ -162,58 +162,37 @@ function renderDashboardRow(r) {
   card.className = `card ${urgencyClass(r.days_until)}`;
   const u = r.days_until != null ? dueLabel(r.days_until) : '';
   const urgent = r.days_until != null && r.days_until <= 3;
-  const fields = [];
-  if (r.due_date) fields.push(`<div><span class="label">When</span><span class="value${urgent ? ' urgent' : ''}">${fmtDate(r.due_date)} · ${u}</span></div>`);
-  if (r.cost_pence != null) fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(r.cost_pence)}${r.billing_cycle ? ' / ' + r.billing_cycle : ''}</span></div>`);
-  if (r.next_action_label) fields.push(`<div><span class="label">Next</span><span class="value">${escapeHtml(r.next_action_label)}</span></div>`);
-  if (r.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(r.category)}</span></div>`);
+
+  // Build compact meta line: "28 Jun 2026 · Tomorrow · £10.99 / monthly · Gaming"
+  const metaBits = [];
+  if (r.due_date) metaBits.push(`<span class="meta-value">${fmtDate(r.due_date)}</span><span class="sep">·</span><span class="${urgent ? 'meta-value urgent' : 'meta-value'}">${u}</span>`);
+  if (r.cost_pence != null) metaBits.push(`<span class="meta-cost">${fmtGBP(r.cost_pence)}${r.billing_cycle ? ' / ' + r.billing_cycle : ''}</span>`);
+  if (r.category) metaBits.push(`<span>${escapeHtml(r.category)}</span>`);
+  if (r.next_action_label) metaBits.push(`<span class="meta-value">${escapeHtml(r.next_action_label)}</span>`);
+
   card.innerHTML = `
-    <div class="card-head">
-      <div class="card-title">
-        ${vendorAvatar(r)}
-        <span class="card-title-text">${escapeHtml(r.title)}</span>
-      </div>
-      <span class="card-kind ${r.kind}">${r.kind}</span>
+    <div class="card-row1">
+      ${vendorAvatar(r)}
+      <div class="card-title">${escapeHtml(r.title)}</div>
+      ${r.days_until != null ? `<div class="urgency-pill ${urgencyClass(r.days_until)}">${u}</div>` : ''}
     </div>
-    ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
+    ${metaBits.length ? `<div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>` : ''}
     ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
-    <div class="card-actions"></div>
   `;
-  const actions = card.querySelector('.card-actions');
-  // Quick actions per kind
-  if (r.kind === 'reminder') {
-    const done = document.createElement('button');
-    done.className = 'btn btn-small btn-primary';
-    done.textContent = '✓ Mark done';
-    done.onclick = async () => {
-      try {
-        await api('POST', `/api/reminders/${r.id}/done`, {});
-        toast('Marked done · next due computed');
-        loadDashboard();
-        if (state.activeTab === 'reminders') loadReminders();
-      } catch (e) {
-        toast(`Error: ${e.message}`);
-      }
-    };
-    actions.appendChild(done);
-  }
-  // Edit for all
-  const edit = document.createElement('button');
-  edit.className = 'btn btn-small btn-secondary';
-  edit.textContent = 'Edit';
-  edit.onclick = async () => {
+  // Tap card to edit
+  card.addEventListener('click', async (ev) => {
+    if (ev.target.closest('button')) return; // don't double-fire on buttons
     const item = await fetchItem(r.kind, r.id);
     if (item) openModal(r.kind, item);
-  };
-  actions.appendChild(edit);
+  });
   return card;
 }
 
 function vendorAvatar(r) {
   // First-letter avatar: pull from vendor or fall back to title.
-  const seed = (r.kind === 'vehicle-entry' ? '' : '') || (r._vendor || '') || r.title || r.kind;
+  const seed = (r._vendor || '') || r.title || r.kind;
   const ch = (seed.trim()[0] || '?').toUpperCase();
-  const cls = r.kind === 'subscription' || r.kind === 'reminder' || r.kind === 'watchlist' ? r.kind : (r.entry_type || r.kind);
+  const cls = r.entry_type || r.kind;
   return `<span class="vendor-avatar ${cls}">${escapeHtml(ch)}</span>`;
 }
 
@@ -248,46 +227,26 @@ function renderSubscriptions() {
     card.className = 'card';
     const days = s.next_due_date ? daysFromNow(s.next_due_date) : null;
     card.classList.add(urgencyClass(days));
-    const fields = [];
-    if (s.vendor) fields.push(`<div><span class="label">Vendor</span><span class="value">${escapeHtml(s.vendor)}</span></div>`);
-    if (s.cost_pence != null) fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(s.cost_pence)}${s.currency ? ' ' + s.currency : ''}</span></div>`);
-    if (s.next_due_date) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(s.next_due_date)} · ${dueLabel(days)}</span></div>`);
-    if (s.billing_cycle) fields.push(`<div><span class="label">Cycle</span><span class="value">${s.billing_cycle}</span></div>`);
-    if (s.status !== 'active') fields.push(`<div><span class="label">Status</span><span class="value">${s.status}</span></div>`);
-    if (!s.auto_renew) fields.push(`<div><span class="label">Renew</span><span class="value">manual</span></div>`);
+    const metaBits = [];
+    if (s.vendor) metaBits.push(`<span>${escapeHtml(s.vendor)}</span>`);
+    if (s.cost_pence != null) metaBits.push(`<span class="meta-cost">${fmtGBP(s.cost_pence)}${s.currency ? ' ' + s.currency : ''}</span>`);
+    if (s.next_due_date) metaBits.push(`<span class="meta-value">${fmtDate(s.next_due_date)}</span><span class="sep">·</span><span class="meta-value">${dueLabel(days)}</span>`);
+    if (s.status !== 'active') metaBits.push(`<span class="kind-chip subscription">${s.status}</span>`);
+    if (!s.auto_renew) metaBits.push(`<span>manual</span>`);
     card.innerHTML = `
-      <div class="card-head">
-        <div class="card-title">
-          ${vendorAvatar({ ...s, kind: 'subscription' })}
-          <span class="card-title-text">${escapeHtml(s.name)}</span>
-        </div>
-        <span class="card-kind subscription">${s.billing_cycle}</span>
+      <div class="card-row1">
+        ${vendorAvatar({ ...s, kind: 'subscription', title: s.name })}
+        <div class="card-title">${escapeHtml(s.name)}</div>
+        ${s.next_due_date ? `<div class="urgency-pill ${urgencyClass(days)}">${dueLabel(days)}</div>` : ''}
       </div>
-      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
+      ${metaBits.length ? `<div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>` : ''}
       ${s.notes ? `<div class="card-notes">${escapeHtml(s.notes)}</div>` : ''}
-      <div class="card-actions"></div>
     `;
-    const actions = card.querySelector('.card-actions');
-    actions.appendChild(makeBtn('Edit', 'btn-secondary', () => openModal('subscription', s)));
-    if (s.status === 'active') {
-      actions.appendChild(makeBtn('Pause', 'btn-secondary', async () => {
-        await api('PATCH', `/api/subscriptions/${s.id}`, { status: 'paused' });
-        toast('Paused');
-        loadSubscriptions();
-      }));
-    } else {
-      actions.appendChild(makeBtn('Resume', 'btn-secondary', async () => {
-        await api('PATCH', `/api/subscriptions/${s.id}`, { status: 'active' });
-        toast('Resumed');
-        loadSubscriptions();
-      }));
-    }
-    actions.appendChild(makeBtn('Delete', 'btn-danger', async () => {
-      if (!confirm(`Delete "${s.name}"?`)) return;
-      await api('DELETE', `/api/subscriptions/${s.id}`);
-      toast('Deleted');
-      loadSubscriptions();
-    }));
+    // Tap card to edit
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('button')) return;
+      openModal('subscription', s);
+    });
     list.appendChild(card);
   }
 }
@@ -316,40 +275,41 @@ function renderReminders() {
     card.className = 'card';
     const days = r.next_due ? daysFromNow(r.next_due) : null;
     card.classList.add(urgencyClass(days));
-    const fields = [];
-    if (r.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(r.category)}</span></div>`);
-    if (r.next_due) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(r.next_due)} · ${dueLabel(days)}</span></div>`);
-    if (r.last_done) fields.push(`<div><span class="label">Last</span><span class="value">${fmtDate(r.last_done)}</span></div>`);
-    if (r.status !== 'active') fields.push(`<div><span class="label">Status</span><span class="value">${r.status}</span></div>`);
+    const metaBits = [];
+    if (r.category) metaBits.push(`<span>${escapeHtml(r.category)}</span>`);
+    if (r.cadence_value) metaBits.push(`<span>every ${r.cadence_value} ${r.cadence_unit}</span>`);
+    if (r.next_due) metaBits.push(`<span class="meta-value">${fmtDate(r.next_due)}</span><span class="sep">·</span><span class="meta-value">${dueLabel(days)}</span>`);
+    if (r.last_done) metaBits.push(`<span>last: ${fmtDate(r.last_done)}</span>`);
+    const isOverdue = days != null && days < 0;
     card.innerHTML = `
-      <div class="card-head">
-        <div class="card-title">
-          ${vendorAvatar({ ...r, kind: 'reminder' })}
-          <span class="card-title-text">${escapeHtml(r.title)}</span>
-        </div>
-        <span class="card-kind reminder">${r.cadence_value} ${r.cadence_unit}</span>
+      <div class="card-row1">
+        ${vendorAvatar({ ...r, kind: 'reminder' })}
+        <div class="card-title">${escapeHtml(r.title)}</div>
+        ${r.next_due ? `<div class="urgency-pill ${urgencyClass(days)}">${dueLabel(days)}</div>` : ''}
       </div>
-      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
+      ${metaBits.length ? `<div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>` : ''}
       ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
-      <div class="card-actions"></div>
+      ${(isOverdue || days === 0 || (days != null && days <= 14)) ? `<div class="card-row3"><button class="btn btn-small btn-primary" data-action="done" data-id="${r.id}">✓ Mark done</button></div>` : ''}
     `;
-    const actions = card.querySelector('.card-actions');
-    actions.appendChild(makeBtn('✓ Done', 'btn-primary', async () => {
-      await api('POST', `/api/reminders/${r.id}/done`, {});
-      toast('Done · next due updated');
-      loadReminders();
-      loadDashboard();
-    }));
-    actions.appendChild(makeBtn('Edit', 'btn-secondary', () => openModal('reminder', r)));
-    actions.appendChild(makeBtn('Delete', 'btn-danger', async () => {
-      if (!confirm(`Delete "${r.title}"?`)) return;
-      await api('DELETE', `/api/reminders/${r.id}`);
-      toast('Deleted');
-      loadReminders();
-    }));
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('button')) return;
+      openModal('reminder', r);
+    });
     list.appendChild(card);
   }
 }
+
+// Delegate Done buttons on reminder cards
+$('#reminder-list')?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button[data-action="done"]');
+  if (!btn) return;
+  ev.stopPropagation();
+  const id = btn.dataset.id;
+  await api('POST', `/api/reminders/${id}/done`, {});
+  toast('Done · next due updated');
+  loadReminders();
+  loadDashboard();
+});
 
 // =========================================================
 // Watchlist
@@ -375,37 +335,24 @@ function renderWatchlist() {
     card.className = 'card';
     const days = w.next_action_date ? daysFromNow(w.next_action_date) : null;
     card.classList.add(urgencyClass(days));
-    const fields = [];
-    if (w.category) fields.push(`<div><span class="label">Cat</span><span class="value">${escapeHtml(w.category)}</span></div>`);
-    if (w.parties) fields.push(`<div><span class="label">Parties</span><span class="value">${escapeHtml(w.parties)}</span></div>`);
-    if (w.next_action_date) fields.push(`<div><span class="label">Next</span><span class="value">${fmtDate(w.next_action_date)} · ${w.next_action_label || dueLabel(days)}</span></div>`);
+    const metaBits = [];
+    if (w.category) metaBits.push(`<span>${escapeHtml(w.category)}</span>`);
+    if (w.parties) metaBits.push(`<span>${escapeHtml(w.parties)}</span>`);
+    if (w.next_action_date) metaBits.push(`<span class="meta-value">${fmtDate(w.next_action_date)}</span><span class="sep">·</span><span class="meta-value">${w.next_action_label || dueLabel(days)}</span>`);
+    if (w.status !== 'open' && w.status !== 'waiting') metaBits.push(`<span class="kind-chip watchlist">${w.status}</span>`);
     card.innerHTML = `
-      <div class="card-head">
-        <div class="card-title">
-          ${vendorAvatar({ ...w, kind: 'watchlist' })}
-          <span class="card-title-text">${escapeHtml(w.title)}</span>
-        </div>
-        <span class="card-kind watchlist">${w.status}</span>
+      <div class="card-row1">
+        ${vendorAvatar({ ...w, kind: 'watchlist' })}
+        <div class="card-title">${escapeHtml(w.title)}</div>
+        ${w.next_action_date ? `<div class="urgency-pill ${urgencyClass(days)}">${w.next_action_label || dueLabel(days)}</div>` : `<div class="kind-chip watchlist">${w.status}</div>`}
       </div>
-      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
+      ${metaBits.length ? `<div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>` : ''}
       ${w.notes ? `<div class="card-notes">${escapeHtml(w.notes)}</div>` : ''}
-      <div class="card-actions"></div>
     `;
-    const actions = card.querySelector('.card-actions');
-    if (w.status !== 'closed') {
-      actions.appendChild(makeBtn('Close', 'btn-secondary', async () => {
-        await api('PATCH', `/api/watchlist/${w.id}`, { status: 'closed' });
-        toast('Closed');
-        loadWatchlist();
-      }));
-    }
-    actions.appendChild(makeBtn('Edit', 'btn-secondary', () => openModal('watchlist', w)));
-    actions.appendChild(makeBtn('Delete', 'btn-danger', async () => {
-      if (!confirm(`Delete "${w.title}"?`)) return;
-      await api('DELETE', `/api/watchlist/${w.id}`);
-      toast('Deleted');
-      loadWatchlist();
-    }));
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('button')) return;
+      openModal('watchlist', w);
+    });
     list.appendChild(card);
   }
 }
@@ -415,21 +362,129 @@ function renderWatchlist() {
 // =========================================================
 
 async function loadVehicle() {
-  const [{ items }, summary, easee] = await Promise.all([
+  const [{ items }, summary, easee, live] = await Promise.all([
     api('GET', '/api/vehicle/entries?vehicle=mycar'),
     api('GET', '/api/vehicle/summary?vehicle=mycar'),
     api('GET', '/api/easee/status'),
+    api('GET', '/api/easee/live').catch(() => ({ charger: null, session: null, configured: false })),
   ]);
   state.vehicleEntries = items;
   state.vehicleSummary = summary;
-  renderVehicleSummary();
+  renderVehicleSummary(summary);
   renderVehicleEntries();
-  renderEasee(easee);
+  renderEasee(easee, live);
 }
 
-function renderEasee(status) {
+function renderVehicleSummary(s) {
+  const a = s.last_30d;
+  const all = s.all_time;
+  const el = $('#vehicle-summary');
+  if (!s) {
+    el.textContent = '—';
+    return;
+  }
+  // Build HTML for summary tiles + sparkline + EV/petrol breakdown + last fill/charge
+  el.innerHTML = `
+    <div class="summary-tile highlight">
+      <h4>30d £/mile</h4>
+      <div class="v">${a.pence_per_mile != null ? (a.pence_per_mile / 100).toFixed(2) : '—'}</div>
+      <div class="s">${a.total_miles != null ? a.total_miles + ' miles' : 'no odo'}</div>
+    </div>
+    <div class="summary-tile">
+      <h4>30d spend</h4>
+      <div class="v">${fmtGBP(a.total_pence)}</div>
+      <div class="s">${fmtGBP(a.fuel_pence)} fuel · ${fmtGBP(a.charge_pence)} charge</div>
+    </div>
+    <div class="summary-tile">
+      <h4>30d fuel</h4>
+      <div class="v small">${a.fuel_litres.toFixed(1)} L</div>
+      <div class="s">${a.fuel_mpg ? a.fuel_mpg.toFixed(1) + ' MPG' : '—'}</div>
+    </div>
+    <div class="summary-tile">
+      <h4>30d charge</h4>
+      <div class="v small">${a.charge_kwh.toFixed(1)} kWh</div>
+      <div class="s">${fmtGBP(a.home_charge_pence)} home${a.charge_kwh > 0 ? ' · ' + (a.charge_pence / a.charge_kwh / 100).toFixed(0) + 'p/kWh' : ''}</div>
+    </div>
+    ${s.trend && s.trend.length >= 2 ? renderSparkChart(s.trend) : ''}
+    ${all.total_miles > 0 ? `
+      <div class="summary-tile" style="grid-column: span 2;">
+        <h4>All-time miles split</h4>
+        <div class="breakdown-bar">
+          <div class="electric" style="width: ${(all.ev_pct * 100).toFixed(1)}%"></div>
+          <div class="petrol" style="width: ${((1 - all.ev_pct) * 100).toFixed(1)}%"></div>
+        </div>
+        <div class="breakdown-labels">
+          <span class="electric">⚡ ${Math.round(all.ev_miles)} mi (${(all.ev_pct * 100).toFixed(0)}%)</span>
+          <span class="petrol">⛽ ${Math.round(all.petrol_miles)} mi (${((1 - all.ev_pct) * 100).toFixed(0)}%)</span>
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  // Append last fill / charge summary if there's space
+  if (s.last_fuel || s.last_charge) {
+    const lastFillDiv = document.createElement('div');
+    lastFillDiv.className = 'analytics-row';
+    lastFillDiv.innerHTML = `
+      ${s.last_fuel ? `
+        <div class="analytics-tile">
+          <div class="label">Last fill</div>
+          <div class="v">${fmtGBP(s.last_fuel.cost_pence)}</div>
+          <div class="label" style="margin-top:4px">${s.last_fuel.litres ? s.last_fuel.litres.toFixed(1) + ' L' : ''} · ${fmtDate(s.last_fuel.entry_date)}</div>
+        </div>
+      ` : ''}
+      ${s.last_charge ? `
+        <div class="analytics-tile">
+          <div class="label">Last charge</div>
+          <div class="v electric">${fmtGBP(s.last_charge.cost_pence)}</div>
+          <div class="label" style="margin-top:4px">${s.last_charge.kwh ? s.last_charge.kwh.toFixed(1) + ' kWh' : ''} · ${fmtDate(s.last_charge.entry_date)}</div>
+        </div>
+      ` : ''}
+      <div class="analytics-tile">
+        <div class="label">90d £/mile</div>
+        <div class="v">${s.last_90d.pence_per_mile != null ? (s.last_90d.pence_per_mile / 100).toFixed(2) : '—'}</div>
+        <div class="label" style="margin-top:4px">${fmtGBP(s.last_90d.total_pence)}</div>
+      </div>
+    `;
+    el.appendChild(lastFillDiv);
+  }
+}
+
+function renderSparkChart(trend) {
+  // trend is [{month, fuel_pence, charge_pence, total_pence, miles}, ...]
+  const w = 320, h = 60, pad = 4;
+  const data = trend.map((d) => ({ x: d.month, y: d.total_pence, m: d.miles ?? 0 }));
+  const maxY = Math.max(1, ...data.map((d) => d.y));
+  const minY = 0;
+  const xStep = (w - pad * 2) / Math.max(1, data.length - 1);
+  const points = data.map((d, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - ((d.y - minY) / (maxY - minY)) * (h - pad * 2);
+    return { x, y, d };
+  });
+  // Build path
+  const linePath = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${h - pad} L ${points[0].x} ${h - pad} Z`;
+  return `
+    <div class="summary-tile" style="grid-column: span 2;">
+      <h4>6-month spend</h4>
+      <svg class="spark-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        <path class="spark-area" d="${areaPath}" />
+        <path class="spark-line" d="${linePath}" />
+        ${points.map((p) => `<circle class="spark-dot" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
+      </svg>
+      <div class="spark-labels">
+        <span>${data[0]?.x ?? ''}</span>
+        <span>${data[data.length - 1]?.x ?? ''}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderEasee(status, live) {
   const el = $('#easee-status');
   const btn = $('#easee-sync');
+  const banner = $('#live-charge-banner');
   if (!el || !btn) return;
   if (status?.configured) {
     el.textContent = 'connected';
@@ -439,6 +494,23 @@ function renderEasee(status) {
     el.textContent = 'not connected — add EASEE_USERNAME + EASEE_PASSWORD secrets';
     el.className = 'easee-status err';
     btn.hidden = true;
+  }
+  // Live charging banner
+  if (banner) {
+    if (live && live.session && live.session.sessionEnergy != null) {
+      banner.hidden = false;
+      banner.innerHTML = `
+        <div class="live-charge-pulse"></div>
+        <div class="live-charge-body">
+          <div class="live-charge-title">⚡ Charging now — ${escapeHtml(live.charger?.name ?? 'Easee')}</div>
+          <div class="live-charge-sub">${live.session.sessionEnergy.toFixed(2)} kWh delivered</div>
+        </div>
+        <div class="live-charge-stat">${live.session.sessionEnergy.toFixed(1)}<span style="font-size:12px;font-weight:400;opacity:0.7"> kWh</span></div>
+      `;
+    } else {
+      banner.hidden = true;
+      banner.innerHTML = '';
+    }
   }
 }
 
@@ -507,34 +579,31 @@ function renderVehicleEntries() {
   for (const e of state.vehicleEntries.slice(0, 30)) {
     const card = document.createElement('div');
     card.className = 'card';
-    const fields = [];
-    fields.push(`<div><span class="label">Cost</span><span class="value">${fmtGBP(e.cost_pence)}</span></div>`);
-    if (e.litres) fields.push(`<div><span class="label">Litres</span><span class="value">${e.litres.toFixed(2)} L</span></div>`);
-    if (e.kwh) fields.push(`<div><span class="label">kWh</span><span class="value">${e.kwh.toFixed(2)}</span></div>`);
-    if (e.odometer_miles) fields.push(`<div><span class="label">Odo</span><span class="value">${e.odometer_miles} mi</span></div>`);
-    if (e.unit) fields.push(`<div><span class="label">Unit</span><span class="value">${escapeHtml(e.unit)}</span></div>`);
-    if (e.location) fields.push(`<div><span class="label">Where</span><span class="value">${escapeHtml(e.location)}</span></div>`);
-    if (e.is_home_charge) fields.push(`<div><span class="label">Charge</span><span class="value">home</span></div>`);
     const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
+    const metaBits = [];
+    metaBits.push(`<span class="meta-cost">${fmtGBP(e.cost_pence)}</span>`);
+    if (e.litres) metaBits.push(`<span>${e.litres.toFixed(2)} L</span>`);
+    if (e.kwh) metaBits.push(`<span>${e.kwh.toFixed(2)} kWh</span>`);
+    if (e.odometer_miles) metaBits.push(`<span>${e.odometer_miles} mi</span>`);
+    if (e.miles) metaBits.push(`<span>+${Math.round(e.miles)} mi</span>`);
+    if (e.location) metaBits.push(`<span>${escapeHtml(e.location)}</span>`);
+    if (e.is_home_charge) metaBits.push(`<span class="kind-chip charge">home</span>`);
     card.innerHTML = `
-      <div class="card-head">
-        <div class="card-title">
-          <span class="vendor-avatar ${e.entry_type}">${icon}</span>
-          <span class="card-title-text">${e.entry_type === 'fuel' ? 'Fuel' : 'Charge'}</span>
-        </div>
-        <span class="card-kind ${e.entry_type}">${fmtDate(e.entry_date)}</span>
+      <div class="card-row1">
+        <span class="vendor-avatar ${e.entry_type}">${icon}</span>
+        <div class="card-title">${e.entry_type === 'fuel' ? 'Fuel' : 'Charge'}${e.location ? ` · ${escapeHtml(e.location)}` : ''}</div>
+        <div class="kind-chip ${e.entry_type}">${fmtDate(e.entry_date)}</div>
       </div>
-      ${fields.length ? `<div class="card-grid">${fields.join('')}</div>` : ''}
+      <div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>
       ${e.notes ? `<div class="card-notes">${escapeHtml(e.notes)}</div>` : ''}
-      <div class="card-actions"></div>
     `;
-    const actions = card.querySelector('.card-actions');
-    actions.appendChild(makeBtn('Delete', 'btn-danger', async () => {
-      if (!confirm('Delete this entry?')) return;
+    card.addEventListener('click', async (ev) => {
+      if (ev.target.closest('button')) return;
+      if (!confirm(`Delete this ${e.entry_type} entry?`)) return;
       await api('DELETE', `/api/vehicle/entries/${e.id}`);
       toast('Deleted');
       loadVehicle();
-    }));
+    });
     list.appendChild(card);
   }
 }

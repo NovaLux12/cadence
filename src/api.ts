@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from './types';
 import * as db from './db';
 import { batchTelegram, formatAlert, sendTelegram } from './alerts';
-import { syncEasee } from './easee';
+import { syncEasee, getLiveCharging } from './easee';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -398,6 +398,11 @@ app.get('/api/easee/status', async (c) => {
   return c.json({
     configured: !!(c.env.EASEE_USERNAME && c.env.EASEE_PASSWORD),
   });
+});
+
+app.get('/api/easee/live', async (c) => {
+  const live = await getLiveCharging(c.env);
+  return c.json(live);
 });
 
 export default app;
