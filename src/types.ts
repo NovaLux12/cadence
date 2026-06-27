@@ -89,6 +89,7 @@ export interface VehicleEntry {
   unit: string | null;
   location: string | null;
   is_home_charge: number;
+  ignored: number;
   notes: string | null;
   created_at: string;
 }

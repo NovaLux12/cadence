@@ -11,6 +11,8 @@ const state = {
   watchlist: [],
   vehicleEntries: [],
   vehicleSummary: null,
+  vehicleLimit: 30,
+  vehicleFilters: { type: '', showIgnored: false },
   authToken: localStorage.getItem('cadence.auth') || '',
   modal: null,
 };
@@ -362,18 +364,48 @@ function renderWatchlist() {
 // =========================================================
 
 async function loadVehicle() {
-  const [{ items }, summary, easee, live] = await Promise.all([
-    api('GET', '/api/vehicle/entries?vehicle=mycar'),
+  // Build query string from current filters
+  const qs = new URLSearchParams({ vehicle: 'mycar' });
+  if (state.vehicleFilters.type) qs.set('type', state.vehicleFilters.type);
+  if (state.vehicleFilters.showIgnored) qs.set('includeIgnored', '1');
+  qs.set('limit', String(state.vehicleLimit));
+  const [entries, summary, easee, live] = await Promise.all([
+    api('GET', `/api/vehicle/entries?${qs.toString()}`),
     api('GET', '/api/vehicle/summary?vehicle=mycar'),
     api('GET', '/api/easee/status'),
     api('GET', '/api/easee/live').catch(() => ({ charger: null, session: null, configured: false })),
   ]);
-  state.vehicleEntries = items;
+  state.vehicleEntries = entries.items;
   state.vehicleSummary = summary;
   renderVehicleSummary(summary);
+  renderVehicleFilterChips();
   renderVehicleEntries();
   renderEasee(easee, live);
 }
+
+function renderVehicleFilterChips() {
+  const el = $('#vehicle-filter-chips');
+  if (!el) return;
+  const f = state.vehicleFilters;
+  el.innerHTML = `
+    <button class="filter-chip${!f.type ? ' active' : ''}" data-filter="all">All</button>
+    <button class="filter-chip${f.type === 'fuel' ? ' active' : ''}" data-filter="fuel">⛽ Fuel</button>
+    <button class="filter-chip${f.type === 'charge' ? ' active' : ''}" data-filter="charge">⚡ Charge</button>
+    <button class="filter-chip${f.showIgnored ? ' active' : ''}" data-filter="ignored">Hidden</button>
+  `;
+}
+
+document.addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.filter-chip');
+  if (!chip) return;
+  const f = state.vehicleFilters;
+  const v = chip.dataset.filter;
+  if (v === 'all') { f.type = ''; f.showIgnored = false; }
+  else if (v === 'fuel' || v === 'charge') { f.type = v; }
+  else if (v === 'ignored') { f.showIgnored = !f.showIgnored; }
+  state.vehicleLimit = 30;
+  loadVehicle();
+});
 
 function renderVehicleSummary(s) {
   const a = s.last_30d;
@@ -532,10 +564,16 @@ function renderEasee(status, live) {
 }
 
 function formatDuration(s) {
-  if (s < 60) return s + 's';
-  if (s < 3600) return Math.round(s / 60) + 'min';
+  if (s == null) return '';
+  // Always show in human-friendly units — never raw seconds under a minute.
+  if (s < 60) return '<1 min';
+  if (s < 3600) {
+    const mins = Math.round(s / 60);
+    return mins + ' min';
+  }
   const h = Math.floor(s / 3600);
   const m = Math.round((s % 3600) / 60);
+  if (m === 0) return h + ' h';
   return h + 'h ' + m + 'm';
 }
 
@@ -574,10 +612,13 @@ $('#easee-backfill')?.addEventListener('click', async () => {
 
 function renderVehicleEntries() {
   const list = $('#vehicle-list');
+  const more = $('#vehicle-load-more');
   list.innerHTML = '';
-  for (const e of state.vehicleEntries.slice(0, 30)) {
+  const items = state.vehicleEntries;
+  for (const e of items) {
     const card = document.createElement('div');
     card.className = 'card';
+    if (e.ignored) card.classList.add('ignored');
     const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
     const metaBits = [];
     metaBits.push(`<span class="meta-cost">${fmtGBP(e.cost_pence)}</span>`);
@@ -587,6 +628,7 @@ function renderVehicleEntries() {
     if (e.miles) metaBits.push(`<span>+${Math.round(e.miles)} mi</span>`);
     if (e.location) metaBits.push(`<span>${escapeHtml(e.location)}</span>`);
     if (e.is_home_charge) metaBits.push(`<span class="kind-chip charge">home</span>`);
+    if (e.ignored) metaBits.push(`<span class="kind-chip ignored-badge">ignored</span>`);
     card.innerHTML = `
       <div class="card-row1">
         <span class="vendor-avatar ${e.entry_type}">${icon}</span>
@@ -602,7 +644,16 @@ function renderVehicleEntries() {
     });
     list.appendChild(card);
   }
+  // Show "Load more" if we returned a full page (means there's likely more)
+  if (more) more.hidden = items.length < state.vehicleLimit;
 }
+
+function loadMoreEntries() {
+  state.vehicleLimit += 30;
+  loadVehicle();
+}
+
+$('#vehicle-load-more')?.addEventListener('click', loadMoreEntries);
 
 /**
  * Read-only info modal for a vehicle entry. Shows all fields; has
@@ -611,6 +662,9 @@ function renderVehicleEntries() {
  */
 function openVehicleEntryView(entry) {
   const e = entry;
+  // Start clean — the previous modal may have been Edit (with Save)
+  // or another view (with custom buttons).
+  resetModalActions();
   const icon = e.entry_type === 'fuel' ? '⛽' : '⚡';
   const isFuel = e.entry_type === 'fuel';
   const rows = [];
@@ -632,6 +686,9 @@ function openVehicleEntryView(entry) {
   if (e.is_home_charge) rows.push({ label: 'Charge type', value: 'home' });
   if (e.unit) rows.push({ label: 'Unit price', value: e.unit });
   if (e.notes) rows.push({ label: 'Notes', value: e.notes });
+  if (e.ignored) {
+    rows.push({ label: 'Status', value: '🚫 Ignored (excluded from stats)' });
+  }
 
   const html = `
     <div class="entry-view-head">
@@ -663,6 +720,16 @@ function openVehicleEntryView(entry) {
   editBtn.className = 'btn btn-secondary';
   editBtn.textContent = 'Edit';
   editBtn.onclick = () => openModal('vehicle-entry', e);
+  const ignoreBtn = document.createElement('button');
+  ignoreBtn.className = 'btn btn-secondary';
+  ignoreBtn.textContent = e.ignored ? 'Un-ignore' : 'Ignore';
+  ignoreBtn.title = e.ignored ? 'Re-include this entry in stats' : 'Exclude from stats (keeps the row, hides from aggregates)';
+  ignoreBtn.onclick = async () => {
+    const updated = await api('POST', `/api/vehicle/entries/${e.id}/toggle-ignored`, {});
+    toast(updated.ignored ? 'Ignored — excluded from stats' : 'Re-included in stats');
+    closeModal();
+    loadVehicle();
+  };
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'btn btn-danger';
   deleteBtn.textContent = 'Delete';
@@ -678,6 +745,7 @@ function openVehicleEntryView(entry) {
   closeBtn.textContent = 'Close';
   closeBtn.onclick = closeModal;
   actions.appendChild(editBtn);
+  actions.appendChild(ignoreBtn);
   actions.appendChild(deleteBtn);
   actions.appendChild(closeBtn);
 
@@ -752,6 +820,9 @@ const SCHEMAS = {
 async function openModal(kind, item) {
   const schema = SCHEMAS[kind];
   if (!schema) return;
+  // Always reset modal-actions to defaults first — view modal leaves
+  // custom buttons in there, and we need Cancel/Save to work for forms.
+  resetModalActions();
   state.modal = { kind, item };
   $('#modal-title').textContent = schema.title(item);
   const form = $('#modal-form');
@@ -796,6 +867,26 @@ async function openModal(kind, item) {
 function closeModal() {
   $('#modal-backdrop').classList.add('hidden');
   state.modal = null;
+  resetModalActions();
+}
+
+/**
+ * Restore the modal-actions to its default Save/Cancel state.
+ * openVehicleEntryView wipes innerHTML and adds custom buttons; we
+ * need to put the defaults back so the next openModal (add/edit)
+ * has a working Save button. Without this, the second time you open
+ * any modal after viewing an entry, you get `Cannot set property
+ * textContent of null` because #modal-cancel was removed.
+ */
+function resetModalActions() {
+  const actions = $('.modal-actions');
+  if (!actions) return;
+  actions.innerHTML =
+    '<button class="btn btn-secondary" id="modal-cancel" type="button">Cancel</button>' +
+    '<button class="btn btn-primary" id="modal-save" type="submit" form="modal-form">Save</button>';
+  $('#modal-cancel')?.addEventListener('click', closeModal);
+  // The form's submit listener is on the form element itself (set up at
+  // module load), so it persists across Save button replacement.
 }
 
 $('#modal-close')?.addEventListener('click', closeModal);

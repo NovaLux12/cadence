@@ -350,7 +350,7 @@ export async function deleteWatchlist(db: D1Database, id: number): Promise<boole
 
 export async function listVehicleEntries(
   db: D1Database,
-  opts: { vehicle?: string; since?: string; until?: string; type?: string } = {}
+  opts: { vehicle?: string; since?: string; until?: string; type?: string; includeIgnored?: boolean; limit?: number; offset?: number } = {}
 ): Promise<VehicleEntry[]> {
   const where: string[] = [];
   const binds: unknown[] = [];
@@ -370,9 +370,15 @@ export async function listVehicleEntries(
     where.push('entry_type = ?');
     binds.push(opts.type);
   }
+  if (!opts.includeIgnored) {
+    where.push('ignored = 0');
+  }
   let q = 'SELECT * FROM vehicle_entries';
   if (where.length) q += ' WHERE ' + where.join(' AND ');
-  q += ' ORDER BY entry_date DESC, id DESC LIMIT 500';
+  q += ' ORDER BY entry_date DESC, id DESC';
+  const limit = opts.limit ?? 500;
+  const offset = opts.offset ?? 0;
+  q += ` LIMIT ${limit} OFFSET ${offset}`;
   const { results } = await db.prepare(q).bind(...binds).all<VehicleEntry>();
   return results ?? [];
 }
@@ -382,8 +388,8 @@ export async function createVehicleEntry(db: D1Database, e: Partial<VehicleEntry
   const row = await db
     .prepare(
       `INSERT INTO vehicle_entries (vehicle, entry_type, entry_date, odometer_miles, miles, kwh, litres,
-         cost_pence, unit, location, is_home_charge, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+         cost_pence, unit, location, is_home_charge, ignored, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
     )
     .bind(
       e.vehicle ?? 'mycar',
@@ -397,10 +403,20 @@ export async function createVehicleEntry(db: D1Database, e: Partial<VehicleEntry
       e.unit ?? null,
       e.location ?? null,
       e.is_home_charge ?? 0,
+      e.ignored ?? 0,
       e.notes ?? null
     )
     .first<VehicleEntry>();
   return row!;
+}
+
+/** Toggle the ignored flag on a vehicle entry (excludes it from aggregates). */
+export async function toggleIgnored(db: D1Database, id: number): Promise<VehicleEntry | null> {
+  const cur = await db.prepare('SELECT ignored FROM vehicle_entries WHERE id=?').bind(id).first<{ ignored: number }>();
+  if (!cur) return null;
+  const next = cur.ignored ? 0 : 1;
+  await db.prepare('UPDATE vehicle_entries SET ignored=? WHERE id=?').bind(next, id).run();
+  return db.prepare('SELECT * FROM vehicle_entries WHERE id=?').bind(id).first<VehicleEntry>();
 }
 
 export async function deleteVehicleEntry(db: D1Database, id: number): Promise<boolean> {
@@ -626,7 +642,7 @@ async function vehicleWindow(db: D1Database, vehicle: string, sinceIso: string):
               SUM(CASE WHEN is_home_charge=1 THEN cost_pence ELSE 0 END) AS home_pence,
               SUM(CASE WHEN is_home_charge=1 THEN kwh ELSE 0 END) AS home_kwh
        FROM vehicle_entries
-       WHERE vehicle=? AND entry_date >= ?
+       WHERE vehicle=? AND entry_date >= ? AND ignored=0
        GROUP BY entry_type`
     )
     .bind(vehicle, sinceIso)
@@ -695,12 +711,12 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
   const last90 = await vehicleWindow(db, vehicle, since90);
   const all = await vehicleWindow(db, vehicle, sinceAll);
 
-  // Last fill (most recent fuel entry)
+  // Last fill (most recent fuel entry, ignored excluded)
   const lastFuel = await db
     .prepare(
       `SELECT entry_date, odometer_miles, miles, litres, cost_pence, unit, location
        FROM vehicle_entries
-       WHERE vehicle=? AND entry_type='fuel'
+       WHERE vehicle=? AND entry_type='fuel' AND ignored=0
        ORDER BY entry_date DESC, id DESC LIMIT 1`
     )
     .bind(vehicle)
@@ -713,13 +729,13 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
     .prepare(
       `SELECT entry_date, kwh, cost_pence, location
        FROM vehicle_entries
-       WHERE vehicle=? AND entry_type='charge'
+       WHERE vehicle=? AND entry_type='charge' AND ignored=0
        ORDER BY entry_date DESC, id DESC LIMIT 1`
     )
     .bind(vehicle)
     .first<{ entry_date: string; kwh: number | null; cost_pence: number; location: string | null }>();
 
-  // Monthly trend (last 6 months): total £ per month
+  // Monthly trend (last 6 months): total £ per month, ignored excluded
   const trendResult = await db
     .prepare(
       `SELECT substr(entry_date, 1, 7) AS month,
@@ -728,7 +744,7 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
               SUM(cost_pence) AS total_pence,
               SUM(miles) AS miles
        FROM vehicle_entries
-       WHERE vehicle=? AND entry_date >= date('now', '-6 months')
+       WHERE vehicle=? AND entry_date >= date('now', '-6 months') AND ignored=0
        GROUP BY substr(entry_date, 1, 7)
        ORDER BY month ASC`
     )
@@ -736,16 +752,16 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
     .all<{ month: string; fuel_pence: number; charge_pence: number; total_pence: number; miles: number }>();
   const trend = trendResult?.results ?? [];
 
-  // EV vs petrol mile split (all time)
+  // EV vs petrol mile split (all time, ignored excluded)
   const evMiles = all.charge_pence > 0
     ? (await db
-        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='charge'`)
+        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='charge' AND ignored=0`)
         .bind(vehicle)
         .first<{ m: number }>())?.m ?? 0
     : 0;
   const petrolMiles = all.fuel_pence > 0
     ? (await db
-        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='fuel'`)
+        .prepare(`SELECT COALESCE(SUM(miles),0) AS m FROM vehicle_entries WHERE vehicle=? AND entry_type='fuel' AND ignored=0`)
         .bind(vehicle)
         .first<{ m: number }>())?.m ?? 0
     : 0;

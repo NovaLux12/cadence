@@ -173,7 +173,12 @@ app.get('/api/vehicle/entries', async (c) => {
   const since = c.req.query('since') ?? undefined;
   const until = c.req.query('until') ?? undefined;
   const type = c.req.query('type') ?? undefined;
-  return c.json({ items: await db.listVehicleEntries(c.env.DB, { vehicle, since, until, type }) });
+  const includeIgnored = c.req.query('includeIgnored') === '1';
+  const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined;
+  const offset = c.req.query('offset') ? Number(c.req.query('offset')) : undefined;
+  return c.json({
+    items: await db.listVehicleEntries(c.env.DB, { vehicle, since, until, type, includeIgnored, limit, offset }),
+  });
 });
 
 app.post('/api/vehicle/entries', async (c) => {
@@ -189,6 +194,13 @@ app.delete('/api/vehicle/entries/:id', async (c) => {
   if (deny) return deny;
   const ok = await db.deleteVehicleEntry(c.env.DB, Number(c.req.param('id')));
   return ok ? c.json({ deleted: true }) : c.json({ error: 'not found' }, 404);
+});
+
+app.post('/api/vehicle/entries/:id/toggle-ignored', async (c) => {
+  const deny = requireAuth(c);
+  if (deny) return deny;
+  const updated = await db.toggleIgnored(c.env.DB, Number(c.req.param('id')));
+  return updated ? c.json(updated) : c.json({ error: 'not found' }, 404);
 });
 
 // =========================================================
