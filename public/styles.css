@@ -445,6 +445,43 @@ a { color: var(--accent); }
 .empty p { margin: 0; }
 .empty-sub { font-size: 13px; color: var(--text-dimmer); }
 
+/* === Dashboard section headers === */
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 4px 6px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.section-header:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 4px;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.section-count {
+  font-size: 11px;
+  color: var(--text-dimmer);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.section-today .section-label { color: var(--red); }
+.section-this-week .section-label { color: var(--yellow); }
+.section-this-month .section-label { color: var(--blue); }
+
+/* Inline quick-action (mark done in TODAY section) */
+.quick-done {
+  margin-top: 2px;
+  width: 100%;
+  font-weight: 600;
+}
+
 /* === Filter chips === */
 .filter-chips {
   display: flex;

@@ -156,12 +156,46 @@ async function loadDashboard() {
     return;
   }
   empty.classList.add('hidden');
-  for (const r of rows) {
-    list.appendChild(renderDashboardRow(r));
+  // Group by urgency bucket. Today first, then this week, this month, later.
+  const today = rows.filter((r) => r.days_until != null && r.days_until <= 0);
+  const thisWeek = rows.filter((r) => r.days_until != null && r.days_until >= 1 && r.days_until <= 7);
+  const thisMonth = rows.filter((r) => r.days_until != null && r.days_until >= 8 && r.days_until <= 30);
+  const later = rows.filter((r) => r.days_until != null && r.days_until >= 31);
+  // Items without a due_date go at the end.
+  const unscheduled = rows.filter((r) => r.days_until == null);
+
+  let frag = document.createDocumentFragment();
+  if (today.length) {
+    frag.appendChild(sectionHeader('🔥 Today', today.length, 'today'));
+    for (const r of today) frag.appendChild(renderDashboardRow(r, { inlineDone: true }));
   }
+  if (thisWeek.length) {
+    frag.appendChild(sectionHeader('📅 This Week', thisWeek.length, 'this-week'));
+    for (const r of thisWeek) frag.appendChild(renderDashboardRow(r));
+  }
+  if (thisMonth.length) {
+    frag.appendChild(sectionHeader('📆 This Month', thisMonth.length, 'this-month'));
+    for (const r of thisMonth) frag.appendChild(renderDashboardRow(r));
+  }
+  if (later.length) {
+    frag.appendChild(sectionHeader('🗓 Later', later.length, 'later'));
+    for (const r of later) frag.appendChild(renderDashboardRow(r));
+  }
+  if (unscheduled.length) {
+    frag.appendChild(sectionHeader('📌 No date', unscheduled.length, 'unscheduled'));
+    for (const r of unscheduled) frag.appendChild(renderDashboardRow(r));
+  }
+  list.appendChild(frag);
 }
 
-function renderDashboardRow(r) {
+function sectionHeader(label, count, cls) {
+  const h = document.createElement('div');
+  h.className = `section-header section-${cls}`;
+  h.innerHTML = `<span class="section-label">${escapeHtml(label)}</span><span class="section-count">${count}</span>`;
+  return h;
+}
+
+function renderDashboardRow(r, opts = {}) {
   const card = document.createElement('div');
   card.className = `card ${urgencyClass(r.days_until)}`;
   const u = r.days_until != null ? dueLabel(r.days_until) : '';
@@ -174,6 +208,12 @@ function renderDashboardRow(r) {
   if (r.category) metaBits.push(`<span>${escapeHtml(r.category)}</span>`);
   if (r.next_action_label) metaBits.push(`<span class="meta-value">${escapeHtml(r.next_action_label)}</span>`);
 
+  // Inline quick-action for reminder items (one-tap "✓ Mark done" in TODAY).
+  let quickAction = '';
+  if (opts.inlineDone && r.kind === 'reminder') {
+    quickAction = `<button class="btn btn-small btn-primary quick-done" data-kind="reminder" data-id="${r.id}" title="Mark done — advances next due by cadence">✓ Done</button>`;
+  }
+
   card.innerHTML = `
     <div class="card-row1">
       ${vendorAvatar(r)}
@@ -182,10 +222,11 @@ function renderDashboardRow(r) {
     </div>
     ${metaBits.length ? `<div class="card-row2">${metaBits.join('<span class="sep">·</span>')}</div>` : ''}
     ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
+    ${quickAction ? `<div class="card-row3">${quickAction}</div>` : ''}
   `;
-  // Tap card to edit
+  // Tap card to edit (but not buttons)
   card.addEventListener('click', async (ev) => {
-    if (ev.target.closest('button')) return; // don't double-fire on buttons
+    if (ev.target.closest('button')) return;
     const item = await fetchItem(r.kind, r.id);
     if (item) openModal(r.kind, item);
   });
@@ -201,9 +242,9 @@ function vendorAvatar(r) {
 }
 
 async function fetchItem(kind, id) {
-  if (r.kind === 'subscription') return (await api('GET', `/api/subscriptions/${r.id}`));
-  if (r.kind === 'reminder')     return (await api('GET', `/api/reminders/${r.id}`));
-  if (r.kind === 'watchlist')    return (await api('GET', `/api/watchlist/${r.id}`));
+  if (kind === 'subscription') return (await api('GET', `/api/subscriptions/${id}`));
+  if (kind === 'reminder')     return (await api('GET', `/api/reminders/${id}`));
+  if (kind === 'watchlist')    return (await api('GET', `/api/watchlist/${id}`));
   return null;
 }
 
@@ -303,15 +344,30 @@ function renderReminders() {
   }
 }
 
-// Delegate Done buttons on reminder cards
-$('#reminder-list')?.addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('button[data-action="done"]');
-  if (!btn) return;
-  ev.stopPropagation();
-  const id = btn.dataset.id;
-  await api('POST', `/api/reminders/${id}/done`, {});
-  toast('Done · next due updated');
+// Delegate Done buttons on reminder cards (used by both Subscriptions tab and Dashboard)
+function bindDoneButtons(container, onDone) {
+  container?.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-action="done"]');
+    if (!btn) return;
+    ev.stopPropagation();
+    const id = btn.dataset.id;
+    btn.disabled = true;
+    try {
+      await api('POST', `/api/reminders/${id}/done`, {});
+      toast('Done · next due updated');
+      onDone?.();
+    } catch (e) {
+      toast(`Error: ${e.message}`);
+      btn.disabled = false;
+    }
+  });
+}
+
+bindDoneButtons($('#reminder-list'), () => {
   loadReminders();
+  loadDashboard();
+});
+bindDoneButtons($('#dashboard-list'), () => {
   loadDashboard();
 });
 
