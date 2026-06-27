@@ -1,0 +1,23 @@
+{
+  "name": "cadence",
+  "version": "0.1.0",
+  "description": "Personal recurring items tracker with smart alerts.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply cadence-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply cadence-db --remote",
+    "db:seed:local": "wrangler d1 execute cadence-db --local --file=./seed.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260627.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  }
+}
