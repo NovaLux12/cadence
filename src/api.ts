@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from './types';
 import * as db from './db';
 import { batchTelegram, formatAlert, sendTelegram } from './alerts';
+import { syncEasee } from './easee';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -378,6 +379,25 @@ app.post('/api/alerts/test', async (c) => {
   if (deny) return deny;
   const ok = await sendTelegram(c.env, '🔔 Cadence test alert — Telegram dispatch is working.');
   return c.json({ sent: ok, telegram_configured: !!(c.env.TELEGRAM_BOT_TOKEN && c.env.TELEGRAM_CHAT_ID) });
+});
+
+// =========================================================
+// Easee — live EV charging session sync (auth required)
+// =========================================================
+
+app.post('/api/easee/sync', async (c) => {
+  const deny = requireAuth(c);
+  if (deny) return deny;
+  const vehicle = c.req.query('vehicle') ?? 'mycar';
+  const dry = c.req.query('dry') === '1';
+  const result = await syncEasee(c.env, { vehicle, dryRun: dry });
+  return c.json(result);
+});
+
+app.get('/api/easee/status', async (c) => {
+  return c.json({
+    configured: !!(c.env.EASEE_USERNAME && c.env.EASEE_PASSWORD),
+  });
 });
 
 export default app;

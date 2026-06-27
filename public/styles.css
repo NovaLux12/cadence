@@ -288,6 +288,22 @@ a { color: var(--accent); }
 }
 
 /* === Summary grid (Vehicle) === */
+
+.easee-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 12px 0;
+  font-size: 13px;
+}
+.easee-label { font-weight: 600; }
+.easee-status { color: var(--text-dim); flex: 1; }
+.easee-status.ok { color: var(--green); }
+.easee-status.err { color: var(--text-dimmer); }
 .summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
