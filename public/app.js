@@ -552,7 +552,15 @@ document.addEventListener('click', (ev) => {
   else if (v === 'fuel' || v === 'charge') { f.type = v; }
   else if (v === 'ignored') { f.showIgnored = !f.showIgnored; }
   state.vehicleLimit = 30;
-  loadVehicle();
+  // 'all' resets everything (summary, insights, easee, live) via loadVehicle.
+  // fuel/charge/ignored only affect entries — use the lighter refetch path.
+  if (v === 'all') {
+    loadVehicle();
+  } else {
+    reloadVehicleEntriesOnly();
+    renderBulkBar();
+    renderVehicleFilterChips();
+  }
 });
 
 function renderVehicleSummary(s) {
