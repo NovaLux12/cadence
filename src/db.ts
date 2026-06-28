@@ -603,7 +603,7 @@ export async function dashboard(
       LIMIT 100
       `
     )
-    .bind(today, today, days, today, days, today, days)
+    .bind(today, today, days, today, today, days, today, today, days)
     .all<DashboardRow>();
   return results ?? [];
 }
