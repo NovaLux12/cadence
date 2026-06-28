@@ -16,7 +16,12 @@ function requireAuth(c: Context<{ Bindings: Env }>): Response | null {
   const want = c.env.AUTH_TOKEN;
   if (!want) return c.json({ error: 'AUTH_TOKEN not set on server' }, 503);
   const got = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (got !== want) return c.json({ error: 'unauthorized' }, 401);
+  if (got.length !== want.length) return c.json({ error: 'unauthorized' }, 401);
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) {
+    diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  }
+  if (diff !== 0) return c.json({ error: 'unauthorized' }, 401);
   return null;
 }
 
@@ -31,7 +36,6 @@ app.get('/api/meta', (c) =>
     app: c.env.APP_NAME,
     url: c.env.APP_URL,
     env: c.env.ENVIRONMENT,
-    telegram: !!(c.env.TELEGRAM_BOT_TOKEN && c.env.TELEGRAM_CHAT_ID),
   })
 );
 
@@ -41,7 +45,7 @@ app.get('/api/meta', (c) =>
 
 app.get('/api/dashboard', async (c) => {
   const days = Number(c.req.query('days') ?? 60);
-  const rows = await db.dashboard(c.env.DB, { days });
+  const rows = await db.dashboard(c.env.DB, { days, today: db.todayLondon() });
   return c.json({ rows });
 });
 
@@ -391,12 +395,13 @@ app.post('/api/alerts/run', async (c) => {
   if (deny) return deny;
   const days = Number(c.req.query('days') ?? 60);
   const dry = c.req.query('dry') === '1';
-  return c.json(await runAlerts(c.env, days, dry));
+  return c.json(await runAlerts(c.env, days, dry, db.todayLondon()));
 });
 
-export async function runAlerts(env: Env, days: number, dry: boolean) {
-  const cands = await db.findAlertCandidates(env.DB, days);
+export async function runAlerts(env: Env, days: number, dry: boolean, today?: string) {
+  const cands = await db.findAlertCandidates(env.DB, days, today);
   const messages: string[] = [];
+  const sentKeys = new Set<string>();
   let skipped = 0;
   let sent = 0;
   let failed = 0;
@@ -408,6 +413,7 @@ export async function runAlerts(env: Env, days: number, dry: boolean) {
     }
     const text = formatAlert(c);
     messages.push(text);
+    sentKeys.add(c.kind + '|' + c.id + '|' + c.window_days);
   }
   if (messages.length > 0 && !dry) {
     sent = await batchTelegram(env, messages);
@@ -416,8 +422,8 @@ export async function runAlerts(env: Env, days: number, dry: boolean) {
     for (const cand of cands) {
       const already = await db.alertAlreadySent(env.DB, cand.kind, cand.id, cand.window_days);
       if (already) continue;
-      const txt = formatAlert(cand);
-      const ok = messages.includes(txt) && sent > 0;
+      const key = cand.kind + '|' + cand.id + '|' + cand.window_days;
+      const ok = sentKeys.has(key) && sent > 0;
       await db.recordAlert(env.DB, cand.kind, cand.id, cand.window_days, ok);
     }
   }
