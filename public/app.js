@@ -754,7 +754,15 @@ function bindSparkChartHovers() {
     const elecHover = Array.from(hoverDots).slice(0, n);
     const fuelHover = Array.from(hoverDots).slice(n);
 
+    // iOS Safari fires synthetic mouseenter then click on a single tap.
+    // Gate show() behind a recent touchstart timestamp so the click handler
+    // owns the toggle — avoids tooltip flashing on then immediately off.
+    let touchTs = 0;
+    wrap.addEventListener('touchstart', () => { touchTs = Date.now(); }, { passive: true });
+
     function show(i) {
+      // Skip if a touch fired recently — let the click handler handle it.
+      if (Date.now() - touchTs < 350) return;
       const d = trend[i];
       if (!d) return;
       const hit = hits[i];
