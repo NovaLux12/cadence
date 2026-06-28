@@ -6,6 +6,8 @@ import type {
   WatchlistItem,
   VehicleEntry,
   VehicleSettings,
+  VehicleConnection,
+  VehicleSnapshot,
   DashboardRow,
 } from './types';
 
@@ -972,4 +974,193 @@ export async function vehicleSummary(db: D1Database, vehicle: string) {
     last_charge: lastCharge ?? null,
     trend,
   };
+}
+
+// =========================================================
+// SmartCar — vehicle_connections (0004)
+// =========================================================
+
+/**
+ * Insert or replace a SmartCar connection row. Caller provides the
+ * pre-encrypted token ciphertexts + the SmartCar-assigned vehicle id
+ * and metadata. We never see plaintext tokens here.
+ */
+export async function upsertConnection(
+  db: D1Database,
+  c: {
+    vehicle: string;
+    smartcar_vehicle_id: string;
+    smartcar_make: string | null;
+    smartcar_model: string | null;
+    smartcar_year: number | null;
+    vin: string | null;
+    access_token_enc: string;
+    refresh_token_enc: string;
+    token_expires_at: string;
+    scopes: string;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO vehicle_connections (
+         vehicle, smartcar_vehicle_id, smartcar_make, smartcar_model, smartcar_year, vin,
+         access_token_enc, refresh_token_enc, token_expires_at, scopes, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(vehicle) DO UPDATE SET
+         smartcar_vehicle_id=excluded.smartcar_vehicle_id,
+         smartcar_make=excluded.smartcar_make,
+         smartcar_model=excluded.smartcar_model,
+         smartcar_year=excluded.smartcar_year,
+         vin=excluded.vin,
+         access_token_enc=excluded.access_token_enc,
+         refresh_token_enc=excluded.refresh_token_enc,
+         token_expires_at=excluded.token_expires_at,
+         scopes=excluded.scopes,
+         updated_at=datetime('now')`,
+    )
+    .bind(
+      c.vehicle,
+      c.smartcar_vehicle_id,
+      c.smartcar_make,
+      c.smartcar_model,
+      c.smartcar_year,
+      c.vin,
+      c.access_token_enc,
+      c.refresh_token_enc,
+      c.token_expires_at,
+      c.scopes,
+    )
+    .run();
+}
+
+export async function getConnection(
+  db: D1Database,
+  vehicle: string,
+): Promise<VehicleConnection | null> {
+  return db
+    .prepare('SELECT * FROM vehicle_connections WHERE vehicle=?')
+    .bind(vehicle)
+    .first<VehicleConnection>();
+}
+
+/** Public-safe view of a connection row (no encrypted tokens). */
+export async function getConnectionPublic(
+  db: D1Database,
+  vehicle: string,
+): Promise<{
+  vehicle: string;
+  smartcar_vehicle_id: string;
+  smartcar_make: string | null;
+  smartcar_model: string | null;
+  smartcar_year: number | null;
+  vin: string | null;
+  scopes: string;
+  connected_at: string;
+  last_sync_at: string | null;
+  last_sync_status: string | null;
+  last_error: string | null;
+  updated_at: string;
+} | null> {
+  const row = await db
+    .prepare(
+      `SELECT vehicle, smartcar_vehicle_id, smartcar_make, smartcar_model, smartcar_year,
+              vin, scopes, connected_at, last_sync_at, last_sync_status, last_error, updated_at
+       FROM vehicle_connections WHERE vehicle=?`,
+    )
+    .bind(vehicle)
+    .first<{
+      vehicle: string;
+      smartcar_vehicle_id: string;
+      smartcar_make: string | null;
+      smartcar_model: string | null;
+      smartcar_year: number | null;
+      vin: string | null;
+      scopes: string;
+      connected_at: string;
+      last_sync_at: string | null;
+      last_sync_status: string | null;
+      last_error: string | null;
+      updated_at: string;
+    }>();
+  return row ?? null;
+}
+
+export async function deleteConnection(db: D1Database, vehicle: string): Promise<boolean> {
+  const r = await db.prepare('DELETE FROM vehicle_connections WHERE vehicle=?').bind(vehicle).run();
+  return r.meta.changes > 0;
+}
+
+export async function updateConnectionSyncStatus(
+  db: D1Database,
+  vehicle: string,
+  status: 'ok' | 'error' | 'partial',
+  error: string | null,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE vehicle_connections
+         SET last_sync_at=datetime('now'),
+             last_sync_status=?,
+             last_error=?,
+             updated_at=datetime('now')
+       WHERE vehicle=?`,
+    )
+    .bind(status, error, vehicle)
+    .run();
+}
+
+// =========================================================
+// SmartCar — vehicle_snapshots (0005)
+// =========================================================
+
+/**
+ * Append a single snapshot row. Either value_num or value_text should be set.
+ * recorded_at is the SmartCar signal timestamp; received_at is set by the DB.
+ */
+export async function insertSnapshot(
+  db: D1Database,
+  s: {
+    vehicle: string;
+    signal: string;
+    value_num?: number | null;
+    value_text?: string | null;
+    unit?: string | null;
+    recorded_at: string;
+    source?: 'sync' | 'webhook';
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO vehicle_snapshots (vehicle, signal, value_num, value_text, unit, recorded_at, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      s.vehicle,
+      s.signal,
+      s.value_num ?? null,
+      s.value_text ?? null,
+      s.unit ?? null,
+      s.recorded_at,
+      s.source ?? 'sync',
+    )
+    .run();
+}
+
+/** Latest N snapshots for a (vehicle, signal). */
+export async function listLatestSnapshots(
+  db: D1Database,
+  vehicle: string,
+  signal: string,
+  limit = 50,
+): Promise<VehicleSnapshot[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM vehicle_snapshots
+        WHERE vehicle=? AND signal=?
+        ORDER BY recorded_at DESC
+        LIMIT ?`,
+    )
+    .bind(vehicle, signal, limit)
+    .all<VehicleSnapshot>();
+  return results ?? [];
 }

@@ -348,6 +348,34 @@ a { color: var(--accent); }
 .easee-status.ok { color: var(--green); }
 .easee-status.err { color: var(--text-dimmer); }
 
+.smartcar-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 4px 0 12px 0;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.smartcar-label { font-weight: 600; }
+.smartcar-status { color: var(--text-dim); flex: 1; min-width: 200px; }
+.smartcar-status.ok { color: var(--green); }
+.smartcar-status.warn { color: var(--accent); }
+.smartcar-status.err { color: var(--text-dimmer); }
+.smartcar-meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  margin-left: 4px;
+}
+.smartcar-meta:empty { display: none; }
+
 /* Live charging banner */
 .live-charge {
   display: flex;

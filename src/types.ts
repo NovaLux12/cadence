@@ -12,6 +12,12 @@ export interface Env {
   AUTH_TOKEN?: string;
   EASEE_USERNAME?: string;
   EASEE_PASSWORD?: string;
+  // SmartCar (Phase 2)
+  SMARTCAR_CLIENT_ID?: string;
+  SMARTCAR_CLIENT_SECRET?: string;
+  SMARTCAR_REDIRECT_URI?: string;
+  SMARTCAR_ENCRYPTION_KEY?: string; // 32-byte base64
+  SMARTCAR_DEFAULT_MAKE?: string;   // optional — skip make selector if set
 }
 
 // Domain types — match migrations/0001_initial.sql
@@ -104,6 +110,38 @@ export interface VehicleSettings {
   home_electricity_pence_per_kwh: number | null;
   notes: string | null;
   updated_at: string;
+}
+
+// SmartCar connection row — matches migrations/0004_smartcar_connections.sql
+export interface VehicleConnection {
+  vehicle: string;
+  smartcar_vehicle_id: string;
+  smartcar_make: string | null;
+  smartcar_model: string | null;
+  smartcar_year: number | null;
+  vin: string | null;
+  access_token_enc: string;
+  refresh_token_enc: string;
+  token_expires_at: string;
+  scopes: string;
+  connected_at: string;
+  last_sync_at: string | null;
+  last_sync_status: string | null;
+  last_error: string | null;
+  updated_at: string;
+}
+
+// SmartCar telemetry snapshot — matches migrations/0005_vehicle_snapshots.sql
+export interface VehicleSnapshot {
+  id: number;
+  vehicle: string;
+  signal: string;
+  value_num: number | null;
+  value_text: string | null;
+  unit: string | null;
+  recorded_at: string;
+  received_at: string;
+  source: string;
 }
 
 // Computed / derived types

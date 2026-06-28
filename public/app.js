@@ -434,12 +434,13 @@ async function loadVehicle() {
   if (state.vehicleFilters.q) qs.set('q', state.vehicleFilters.q);
   if (state.vehicleFilters.showIgnored) qs.set('includeIgnored', '1');
   qs.set('limit', String(state.vehicleLimit));
-  const [entries, summary, insights, easee, live] = await Promise.all([
+  const [entries, summary, insights, easee, live, smartcar] = await Promise.all([
     api('GET', `/api/vehicle/entries?${qs.toString()}`),
     api('GET', '/api/vehicle/summary?vehicle=mycar'),
     api('GET', '/api/vehicle/insights?vehicle=mycar'),
     api('GET', '/api/easee/status'),
     api('GET', '/api/easee/live').catch(() => ({ charger: null, session: null, configured: false })),
+    api('GET', '/api/vehicle/smartcar/status').catch(() => ({ configured: false, connected: false, connection: null })),
   ]);
   state.vehicleEntries = entries.items;
   state.vehicleSummary = summary;
@@ -450,6 +451,7 @@ async function loadVehicle() {
   renderVehicleEntries();
   bindSparkChartHovers();
   renderEasee(easee, live);
+  renderSmartcar(smartcar);
 }
 
 /**
@@ -922,6 +924,122 @@ $('#easee-backfill')?.addEventListener('click', async () => {
     btn.textContent = 'Backfill';
   }
 });
+
+// =========================================================
+// SmartCar — connection state + connect/sync/disconnect handlers
+// =========================================================
+
+/**
+ * Render the SmartCar bar. Three states:
+ *  - not configured (no SMARTCAR_* secrets) → hide everything
+ *  - configured but not connected           → show "Connect" button
+ *  - connected                              → show "Sync now" + last-sync meta + Disconnect
+ */
+function renderSmartcar(s) {
+  const statusEl = $('#smartcar-status');
+  const metaEl = $('#smartcar-meta');
+  const syncBtn = $('#smartcar-sync');
+  const connectBtn = $('#smartcar-connect');
+  const disconnectBtn = $('#smartcar-disconnect');
+  if (!statusEl) return;
+  if (!s.configured) {
+    statusEl.textContent = 'not configured — SMARTCAR_* secrets not set';
+    statusEl.className = 'smartcar-status err';
+    if (metaEl) { metaEl.textContent = ''; metaEl.hidden = true; }
+    if (syncBtn) syncBtn.hidden = true;
+    if (connectBtn) connectBtn.hidden = true;
+    if (disconnectBtn) disconnectBtn.hidden = true;
+    return;
+  }
+  if (!s.connected) {
+    statusEl.textContent = 'not connected';
+    statusEl.className = 'smartcar-status warn';
+    if (metaEl) { metaEl.textContent = ''; metaEl.hidden = true; }
+    if (syncBtn) syncBtn.hidden = true;
+    if (connectBtn) connectBtn.hidden = false;
+    if (disconnectBtn) disconnectBtn.hidden = true;
+    return;
+  }
+  const c = s.connection;
+  const label = [c.smartcar_year, c.smartcar_make, c.smartcar_model].filter(Boolean).join(' ');
+  statusEl.textContent = `connected · ${label || 'vehicle'}`;
+  statusEl.className = 'smartcar-status ok';
+  if (metaEl) {
+    const bits = [];
+    if (c.last_sync_at) {
+      bits.push('last sync: ' + new Date(c.last_sync_at + 'Z').toLocaleString());
+    }
+    if (c.last_sync_status && c.last_sync_status !== 'ok') {
+      bits.push(c.last_sync_status + (c.last_error ? ': ' + c.last_error : ''));
+    }
+    if (c.vin) bits.push('VIN ' + c.vin);
+    metaEl.textContent = bits.join(' · ');
+    metaEl.hidden = metaEl.textContent === '';
+  }
+  if (syncBtn) syncBtn.hidden = false;
+  if (connectBtn) connectBtn.hidden = true;
+  if (disconnectBtn) disconnectBtn.hidden = false;
+}
+
+$('#smartcar-connect')?.addEventListener('click', () => {
+  if (!confirm('Connect to SmartCar? You\'ll be redirected to Ford to authorise.')) return;
+  window.location.href = '/api/vehicle/smartcar/connect?vehicle=mycar';
+});
+
+$('#smartcar-sync')?.addEventListener('click', async () => {
+  const btn = $('#smartcar-sync');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Syncing…';
+  try {
+    const r = await api('POST', '/api/vehicle/smartcar/sync?vehicle=mycar');
+    const okBits = [];
+    if (r.signals) {
+      if (typeof r.signals.odometer_miles === 'number') okBits.push(`${Math.round(r.signals.odometer_miles)} mi`);
+      if (typeof r.signals.state_of_charge_pct === 'number') okBits.push(`${r.signals.state_of_charge_pct}% batt`);
+      if (typeof r.signals.fuel_level_pct === 'number') okBits.push(`${r.signals.fuel_level_pct}% fuel`);
+    }
+    const summary = okBits.length ? ` (${okBits.join(', ')})` : '';
+    toast(`SmartCar sync: ${r.status}${summary}`);
+    // Refresh the vehicle summary tile (current_odo_miles changed)
+    api('GET', '/api/vehicle/summary?vehicle=mycar').then((s) => {
+      state.vehicleSummary = s;
+      renderVehicleSummary(s);
+    });
+    loadVehicle();
+  } catch (e) {
+    toast(`SmartCar sync error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+$('#smartcar-disconnect')?.addEventListener('click', async () => {
+  if (!confirm('Disconnect SmartCar? Stored tokens will be deleted.')) return;
+  try {
+    await api('DELETE', '/api/vehicle/smartcar/connection?vehicle=mycar');
+    toast('SmartCar disconnected');
+    loadVehicle();
+  } catch (e) {
+    toast(`Error: ${e.message}`);
+  }
+});
+
+// Surface the ?smartcar=... redirect flags from the OAuth callback.
+(function handleSmartcarRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const flag = params.get('smartcar');
+  if (!flag) return;
+  if (flag === 'connected') toast('SmartCar connected ✓');
+  else if (flag === 'error') toast('SmartCar connect failed: ' + (params.get('reason') || 'unknown'));
+  // Clean the URL so a refresh doesn't re-toast.
+  params.delete('smartcar');
+  params.delete('reason');
+  const qs = params.toString();
+  const clean = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+  window.history.replaceState({}, '', clean);
+})();
 
 function renderVehicleEntries() {
   const list = $('#vehicle-list');
