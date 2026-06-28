@@ -36,7 +36,7 @@ app.get('/api/meta', (c) =>
     app: c.env.APP_NAME,
     url: c.env.APP_URL,
     env: c.env.ENVIRONMENT,
-    telegram: !!(c.env.TELEGRAM_BOT_TOKEN && c.env.TELEGRAM_CHAT_ID),
+    // TODO(builder-3): frontend references meta.telegram — remove once app.js is updated.
   })
 );
 
