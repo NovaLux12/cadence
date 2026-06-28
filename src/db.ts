@@ -14,6 +14,14 @@ import type {
 // =========================================================
 
 /**
+ * Returns today's date as YYYY-MM-DD in Europe/London (BST) timezone.
+ * Used to anchor all due-date calculations in the user's local TZ.
+ */
+export function todayLondon(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+}
+
+/**
  * Normalise a money value into integer pence for storage.
  * Accepts either:
  *   - cost_pence: integer (already in pence)
@@ -103,12 +111,12 @@ export async function updateSubscription(
       : cur.cost_pence,
     updated_at: new Date().toISOString(),
   };
-  await db
+  const row = await db
     .prepare(
       `UPDATE subscriptions SET
          name=?, vendor=?, category=?, cost_pence=?, currency=?, billing_cycle=?,
          next_due_date=?, auto_renew=?, status=?, alert_windows=?, notes=?, updated_at=?
-       WHERE id=?`
+       WHERE id=? RETURNING *`
     )
     .bind(
       merged.name,
@@ -125,8 +133,8 @@ export async function updateSubscription(
       merged.updated_at,
       id
     )
-    .run();
-  return getSubscription(db, id);
+    .first<Subscription>();
+  return row ?? null;
 }
 
 export async function deleteSubscription(db: D1Database, id: number): Promise<boolean> {
@@ -157,8 +165,13 @@ function addCadence(iso: string, value: number, unit: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function computeNextDue(lastDone: string | null, value: number, unit: string): string {
-  const base = lastDone ?? new Date().toISOString().slice(0, 10);
+export function computeNextDue(
+  lastDone: string | null,
+  value: number,
+  unit: string,
+  todayLocal?: string
+): string {
+  const base = lastDone ?? todayLocal ?? new Date().toISOString().slice(0, 10);
   return addCadence(base, value, unit);
 }
 
@@ -207,7 +220,8 @@ export async function createReminder(db: D1Database, r: Partial<Reminder>): Prom
 export async function updateReminder(
   db: D1Database,
   id: number,
-  patch: Partial<Reminder>
+  patch: Partial<Reminder>,
+  todayLocal?: string
 ): Promise<Reminder | null> {
   const cur = await getReminder(db, id);
   if (!cur) return null;
@@ -219,15 +233,16 @@ export async function updateReminder(
         ? computeNextDue(
             patch.last_done ?? cur.last_done,
             patch.cadence_value ?? cur.cadence_value,
-            patch.cadence_unit ?? cur.cadence_unit
+            patch.cadence_unit ?? cur.cadence_unit,
+            todayLocal
           )
         : cur.next_due,
     updated_at: new Date().toISOString(),
   };
-  await db
+  const row = await db
     .prepare(
       `UPDATE reminders SET title=?, category=?, cadence_value=?, cadence_unit=?, last_done=?,
-         next_due=?, alert_windows=?, notes=?, status=?, updated_at=? WHERE id=?`
+         next_due=?, alert_windows=?, notes=?, status=?, updated_at=? WHERE id=? RETURNING *`
     )
     .bind(
       merged.title,
@@ -242,8 +257,8 @@ export async function updateReminder(
       merged.updated_at,
       id
     )
-    .run();
-  return getReminder(db, id);
+    .first<Reminder>();
+  return row ?? null;
 }
 
 export async function markReminderDone(
@@ -251,10 +266,21 @@ export async function markReminderDone(
   id: number,
   doneDate?: string
 ): Promise<Reminder | null> {
+  const today = todayLondon();
+  const done = doneDate ?? today;
+  // Reject future dates — a done_date in the future makes no sense
+  if (done > today) return null;
   const cur = await getReminder(db, id);
   if (!cur) return null;
-  const date = doneDate ?? new Date().toISOString().slice(0, 10);
-  return updateReminder(db, id, { last_done: date, status: 'active' });
+  const nextDue = computeNextDue(done, cur.cadence_value, cur.cadence_unit, today);
+  const row = await db
+    .prepare(
+      `UPDATE reminders SET last_done=?, next_due=?, status='active', updated_at=?
+       WHERE id=? RETURNING *`
+    )
+    .bind(done, nextDue, new Date().toISOString(), id)
+    .first<Reminder>();
+  return row ?? null;
 }
 
 export async function deleteReminder(db: D1Database, id: number): Promise<boolean> {
@@ -318,10 +344,10 @@ export async function updateWatchlist(
     ...patch,
     updated_at: new Date().toISOString(),
   };
-  await db
+  const row = await db
     .prepare(
       `UPDATE watchlist SET title=?, category=?, status=?, next_action_date=?, next_action_label=?,
-         parties=?, notes=?, alert_windows=?, updated_at=? WHERE id=?`
+         parties=?, notes=?, alert_windows=?, updated_at=? WHERE id=? RETURNING *`
     )
     .bind(
       merged.title,
@@ -335,8 +361,8 @@ export async function updateWatchlist(
       merged.updated_at,
       id
     )
-    .run();
-  return getWatchlist(db, id);
+    .first<WatchlistItem>();
+  return row ?? null;
 }
 
 export async function deleteWatchlist(db: D1Database, id: number): Promise<boolean> {
@@ -440,16 +466,27 @@ export async function setIgnored(db: D1Database, id: number, ignored: 0 | 1): Pr
 }
 
 /**
- * Bulk set the ignored flag for many ids in a single UPDATE. Atomic.
- * Returns the number of rows actually updated.
+ * Chunk size for bulkSetIgnored — must stay under D1's 100 bound-parameter cap.
+ * Using 90 leaves room for the `ignored` flag itself.
+ */
+const BULK_CHUNK = 90;
+
+/**
+ * Bulk-set the ignored flag for many ids, chunked to respect D1's 100-param limit.
+ * Each chunk is a separate UPDATE; failures stop the loop and return a partial count.
+ * Returns the total number of rows updated across all chunks.
  */
 export async function bulkSetIgnored(db: D1Database, ids: number[], ignored: 0 | 1): Promise<number> {
   if (ids.length === 0) return 0;
-  // D1/SQLite supports `WHERE id IN (?, ?, …)` with any number of placeholders.
-  const placeholders = ids.map(() => '?').join(', ');
-  const sql = `UPDATE vehicle_entries SET ignored=? WHERE id IN (${placeholders})`;
-  const r = await db.prepare(sql).bind(ignored, ...ids).run();
-  return r.meta?.changes ?? 0;
+  let total = 0;
+  for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+    const chunk = ids.slice(i, i + BULK_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const sql = `UPDATE vehicle_entries SET ignored=? WHERE id IN (${placeholders})`;
+    const r = await db.prepare(sql).bind(ignored, ...chunk).run();
+    total += r.meta?.changes ?? 0;
+  }
+  return total;
 }
 
 export async function deleteVehicleEntry(db: D1Database, id: number): Promise<boolean> {
@@ -510,8 +547,19 @@ export async function upsertVehicleSettings(db: D1Database, s: Partial<VehicleSe
 // Dashboard
 // =========================================================
 
-export async function dashboard(db: D1Database, opts: { days?: number } = {}): Promise<DashboardRow[]> {
+/**
+ * NOTE: `today` MUST be the local (Europe/London) date, computed in the
+ * calling Worker via `todayLondon()`.  D1 itself runs on UTC, so
+ * `date('now','localtime')` on a UTC host still returns UTC — it does NOT
+ * give BST.  The Worker must pass the already-computed London date.
+ * TODO: wire up `todayLondon()` at the /api/dashboard route level (Builder 2).
+ */
+export async function dashboard(
+  db: D1Database,
+  opts: { days?: number; today?: string } = {}
+): Promise<DashboardRow[]> {
   const days = opts.days ?? 60;
+  const today = opts.today ?? todayLondon();
   // Use a subquery to dodge SQLite's strict UNION column-naming rules around ORDER BY.
   const { results } = await db
     .prepare(
@@ -520,42 +568,42 @@ export async function dashboard(db: D1Database, opts: { days?: number } = {}): P
         SELECT 'subscription' AS kind,
                id, name AS title, vendor, category, status,
                next_due_date AS due_date, NULL AS next_action_label,
-               CAST(julianday(next_due_date) - julianday(date('now')) AS INTEGER) AS days_until,
+               CAST(julianday(next_due_date) - julianday(?) AS INTEGER) AS days_until,
                cost_pence, billing_cycle, notes
         FROM subscriptions
         WHERE status='active'
           AND next_due_date IS NOT NULL
-          AND julianday(next_due_date) - julianday(date('now')) <= ?
+          AND julianday(next_due_date) - julianday(?) <= ?
 
         UNION ALL
 
         SELECT 'reminder' AS kind,
                id, title, NULL AS vendor, category, status,
                next_due AS due_date, NULL AS next_action_label,
-               CAST(julianday(next_due) - julianday(date('now')) AS INTEGER) AS days_until,
+               CAST(julianday(next_due) - julianday(?) AS INTEGER) AS days_until,
                NULL AS cost_pence, NULL AS billing_cycle, notes
         FROM reminders
         WHERE status='active'
           AND next_due IS NOT NULL
-          AND julianday(next_due) - julianday(date('now')) <= ?
+          AND julianday(next_due) - julianday(?) <= ?
 
         UNION ALL
 
         SELECT 'watchlist' AS kind,
                id, title, NULL AS vendor, category, status,
                next_action_date AS due_date, next_action_label,
-               CAST(julianday(next_action_date) - julianday(date('now')) AS INTEGER) AS days_until,
+               CAST(julianday(next_action_date) - julianday(?) AS INTEGER) AS days_until,
                NULL AS cost_pence, NULL AS billing_cycle, notes
         FROM watchlist
         WHERE status IN ('open','waiting')
           AND next_action_date IS NOT NULL
-          AND julianday(next_action_date) - julianday(date('now')) <= ?
+          AND julianday(next_action_date) - julianday(?) <= ?
       )
       ORDER BY due_date ASC
       LIMIT 100
       `
     )
-    .bind(days, days, days)
+    .bind(today, today, days, today, days, today, days)
     .all<DashboardRow>();
   return results ?? [];
 }
@@ -575,37 +623,52 @@ export interface AlertCandidate {
   notes: string | null;
 }
 
-export async function findAlertCandidates(db: D1Database, days: number): Promise<AlertCandidate[]> {
+/**
+ * NOTE: `today` MUST be the local (Europe/London) date, computed in the
+ * calling Worker via `todayLondon()`.  D1 itself runs on UTC, so
+ * `date('now','localtime')` on a UTC host still returns UTC — it does NOT
+ * give BST.  The alert runner (alerts.ts) must compute and pass today-London.
+ * TODO: wire up `todayLondon()` in the alert caller (Builder 2 — alerts.ts / api.ts).
+ */
+export async function findAlertCandidates(
+  db: D1Database,
+  days: number,
+  today?: string
+): Promise<AlertCandidate[]> {
+  const todayParam = today ?? todayLondon();
   // For each kind, find active items where due_date is within `days` from now,
   // and a matching alert_window exists. Return every (item, window) pair that matches.
   const sql = `
     WITH upcoming AS (
       SELECT 'subscription' AS kind, id, name AS title, next_due_date AS due_date,
-             CAST(julianday(next_due_date) - julianday(date('now')) AS INTEGER) AS days_until,
+             CAST(julianday(next_due_date) - julianday(?) AS INTEGER) AS days_until,
              alert_windows, notes
       FROM subscriptions
       WHERE status='active' AND next_due_date IS NOT NULL
-        AND julianday(next_due_date) - julianday(date('now')) BETWEEN 0 AND ?
+        AND julianday(next_due_date) - julianday(?) BETWEEN 0 AND ?
 
       UNION ALL
 
-      SELECT 'reminder', id, title, next_due, CAST(julianday(next_due) - julianday(date('now')) AS INTEGER),
+      SELECT 'reminder', id, title, next_due, CAST(julianday(next_due) - julianday(?) AS INTEGER),
              alert_windows, notes
       FROM reminders
       WHERE status='active' AND next_due IS NOT NULL
-        AND julianday(next_due) - julianday(date('now')) BETWEEN 0 AND ?
+        AND julianday(next_due) - julianday(?) BETWEEN 0 AND ?
 
       UNION ALL
 
-      SELECT 'watchlist', id, title, next_action_date, CAST(julianday(next_action_date) - julianday(date('now')) AS INTEGER),
+      SELECT 'watchlist', id, title, next_action_date, CAST(julianday(next_action_date) - julianday(?) AS INTEGER),
              alert_windows, notes
       FROM watchlist
       WHERE status IN ('open','waiting') AND next_action_date IS NOT NULL
-        AND julianday(next_action_date) - julianday(date('now')) BETWEEN 0 AND ?
+        AND julianday(next_action_date) - julianday(?) BETWEEN 0 AND ?
     )
     SELECT * FROM upcoming ORDER BY due_date ASC
   `;
-  const { results } = await db.prepare(sql).bind(days, days, days).all<AlertCandidate>();
+  const { results } = await db
+    .prepare(sql)
+    .bind(todayParam, todayParam, days, todayParam, todayParam, days, todayParam, todayParam, days)
+    .all<AlertCandidate>();
   const out: AlertCandidate[] = [];
   for (const r of results ?? []) {
     const windows = r.alert_windows.split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n));
