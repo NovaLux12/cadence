@@ -402,6 +402,7 @@ app.post('/api/alerts/run', async (c) => {
 export async function runAlerts(env: Env, days: number, dry: boolean) {
   const cands = await db.findAlertCandidates(env.DB, days);
   const messages: string[] = [];
+  const sentKeys = new Set<string>();
   let skipped = 0;
   let sent = 0;
   let failed = 0;
@@ -413,6 +414,7 @@ export async function runAlerts(env: Env, days: number, dry: boolean) {
     }
     const text = formatAlert(c);
     messages.push(text);
+    sentKeys.add(c.kind + '|' + c.id + '|' + c.window_days);
   }
   if (messages.length > 0 && !dry) {
     sent = await batchTelegram(env, messages);
@@ -421,8 +423,8 @@ export async function runAlerts(env: Env, days: number, dry: boolean) {
     for (const cand of cands) {
       const already = await db.alertAlreadySent(env.DB, cand.kind, cand.id, cand.window_days);
       if (already) continue;
-      const txt = formatAlert(cand);
-      const ok = messages.includes(txt) && sent > 0;
+      const key = cand.kind + '|' + cand.id + '|' + cand.window_days;
+      const ok = sentKeys.has(key) && sent > 0;
       await db.recordAlert(env.DB, cand.kind, cand.id, cand.window_days, ok);
     }
   }
