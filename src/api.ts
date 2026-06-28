@@ -36,7 +36,6 @@ app.get('/api/meta', (c) =>
     app: c.env.APP_NAME,
     url: c.env.APP_URL,
     env: c.env.ENVIRONMENT,
-    // TODO(builder-3): frontend references meta.telegram — remove once app.js is updated.
   })
 );
 
@@ -46,7 +45,7 @@ app.get('/api/meta', (c) =>
 
 app.get('/api/dashboard', async (c) => {
   const days = Number(c.req.query('days') ?? 60);
-  const rows = await db.dashboard(c.env.DB, { days });
+  const rows = await db.dashboard(c.env.DB, { days, today: db.todayLondon() });
   return c.json({ rows });
 });
 
@@ -396,11 +395,11 @@ app.post('/api/alerts/run', async (c) => {
   if (deny) return deny;
   const days = Number(c.req.query('days') ?? 60);
   const dry = c.req.query('dry') === '1';
-  return c.json(await runAlerts(c.env, days, dry));
+  return c.json(await runAlerts(c.env, days, dry, db.todayLondon()));
 });
 
-export async function runAlerts(env: Env, days: number, dry: boolean) {
-  const cands = await db.findAlertCandidates(env.DB, days);
+export async function runAlerts(env: Env, days: number, dry: boolean, today?: string) {
+  const cands = await db.findAlertCandidates(env.DB, days, today);
   const messages: string[] = [];
   const sentKeys = new Set<string>();
   let skipped = 0;
