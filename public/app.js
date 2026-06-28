@@ -448,6 +448,7 @@ async function loadVehicle() {
   renderVehicleInsights(insights);
   renderVehicleFilterChips();
   renderVehicleEntries();
+  bindSparkChartHovers();
   renderEasee(easee, live);
 }
 
@@ -686,15 +687,28 @@ function renderSparkChart(trend) {
   const totalPence = trend.reduce((a, d) => a + d.fuel_pence + d.charge_pence, 0);
   const totalMiles = trend.reduce((a, d) => a + (d.miles ?? 0), 0);
   const ppm = totalMiles > 0 ? totalPence / totalMiles / 100 : null;
+  // JSON-encode trend for the hover handler. Escape for HTML attribute (double-quote safe).
+  const trendJson = JSON.stringify(trend).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
   return `
     <div class="summary-tile" style="grid-column: span 2;">
       <h4>6-month spend · fuel vs electric</h4>
-      <svg class="spark-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-        <path class="spark-line-elec" d="${elecPath}" />
-        <path class="spark-line-fuel" d="${fuelPath}" />
-        ${elecPoints.map((p) => `<circle class="spark-dot-elec" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
-        ${fuelPoints.map((p) => `<circle class="spark-dot-fuel" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
-      </svg>
+      <div class="spark-wrap" data-trend="${trendJson}">
+        <svg class="spark-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+          <line class="spark-guide" x1="0" y1="0" x2="0" y2="${h}" />
+          <path class="spark-line-elec" d="${elecPath}" />
+          <path class="spark-line-fuel" d="${fuelPath}" />
+          ${elecPoints.map((p) => `<circle class="spark-dot-elec" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
+          ${fuelPoints.map((p) => `<circle class="spark-dot-fuel" cx="${p.x}" cy="${p.y}" r="2.5"/>`).join('')}
+          ${elecPoints.map((p) => `<circle class="spark-hover-dot spark-hover-dot-elec" cx="${p.x}" cy="${p.y}" r="4"/>`).join('')}
+          ${fuelPoints.map((p) => `<circle class="spark-hover-dot spark-hover-dot-fuel" cx="${p.x}" cy="${p.y}" r="4"/>`).join('')}
+          ${trend.map((_, i) => {
+            // One full-height invisible hover target per month column.
+            const rx = pad + i * xStep - xStep / 2;
+            return `<rect class="spark-hit" data-i="${i}" x="${rx}" y="0" width="${xStep}" height="${h}"/>`;
+          }).join('')}
+        </svg>
+        <div class="spark-tooltip" hidden></div>
+      </div>
       <div class="spark-labels">
         <span>${trend[0]?.month ?? ''}</span>
         <span class="spark-legend"><span class="dot-fuel"></span>fuel <span class="dot-elec"></span>electric</span>
@@ -703,6 +717,103 @@ function renderSparkChart(trend) {
       <div class="s">total ${fmtGBP(totalPence)} · ${totalMiles ? totalMiles + ' mi · ' + (ppm).toFixed(2) + ' £/mi' : 'no odo'}</div>
     </div>
   `;
+}
+
+// Format "2026-01" as "Mar 2026".
+function fmtMonth(yyyymm) {
+  if (!yyyymm) return '';
+  const m = /^(\d{4})-(\d{2})$/.exec(yyyymm);
+  if (!m) return yyyymm;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  const month = d.toLocaleDateString('en-GB', { month: 'short' });
+  return `${month} ${m[1]}`;
+}
+
+// Wire up hover tooltips on the spark chart. Called once per renderVehicleSummary.
+function bindSparkChartHovers() {
+  document.querySelectorAll('.spark-wrap').forEach((wrap) => {
+    if (wrap.dataset.bound) return;
+    wrap.dataset.bound = '1';
+    let trend;
+    try { trend = JSON.parse(wrap.dataset.trend || '[]'); } catch { return; }
+    const svg = wrap.querySelector('svg.spark-chart');
+    const tooltip = wrap.querySelector('.spark-tooltip');
+    const guide = svg.querySelector('.spark-guide');
+    const hits = svg.querySelectorAll('.spark-hit');
+    const hoverDots = svg.querySelectorAll('.spark-hover-dot');
+    // SVG order: elec hover-dots first, then fuel hover-dots.
+    const n = trend.length;
+    const elecHover = Array.from(hoverDots).slice(0, n);
+    const fuelHover = Array.from(hoverDots).slice(n);
+
+    function show(i) {
+      const d = trend[i];
+      if (!d) return;
+      const hit = hits[i];
+      const x = parseFloat(hit.getAttribute('x')) + parseFloat(hit.getAttribute('width')) / 2;
+      guide.setAttribute('x1', x);
+      guide.setAttribute('x2', x);
+      guide.classList.add('on');
+      elecHover.forEach((c, idx) => c.classList.toggle('on', idx === i));
+      fuelHover.forEach((c, idx) => c.classList.toggle('on', idx === i));
+      const miles = d.miles ?? 0;
+      const monthPpm = miles > 0 ? (d.total_pence / miles / 100) : null;
+      tooltip.innerHTML = `
+        <div class="t-month">${escapeHtml(fmtMonth(d.month))}</div>
+        <div class="t-rows">
+          <div class="t-row"><span class="t-dot dot-fuel"></span>Fuel <span class="t-val">${fmtGBP(d.fuel_pence)}</span></div>
+          <div class="t-row"><span class="t-dot dot-elec"></span>Elec <span class="t-val">${fmtGBP(d.charge_pence)}</span></div>
+        </div>
+        <div class="t-foot">${fmtGBP(d.total_pence)}${miles ? ' · ' + miles + ' mi' : ''}${monthPpm != null ? ' · ' + monthPpm.toFixed(2) + ' £/mi' : ''}</div>
+      `;
+      tooltip.hidden = false;
+      // Position tooltip. Convert viewBox x (320 wide) → pixel x in the wrap.
+      const svgRect = svg.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const px = svgRect.left - wrapRect.left + (x / 320) * svgRect.width;
+      const tw = tooltip.offsetWidth || 140;
+      const th = tooltip.offsetHeight || 60;
+      let left = px - tw / 2;
+      const margin = 4;
+      left = Math.max(margin, Math.min(left, wrapRect.width - tw - margin));
+      // Place above the chart; if not enough room inside the tile, place below.
+      // The tooltip is allowed to overflow the tile bounds (position: absolute escapes flow).
+      let top = svgRect.top - wrapRect.top - th - 6;
+      if (top < 2) top = svgRect.bottom - wrapRect.top + 6;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    }
+    function hide() {
+      guide.classList.remove('on');
+      elecHover.forEach((c) => c.classList.remove('on'));
+      fuelHover.forEach((c) => c.classList.remove('on'));
+      tooltip.hidden = true;
+    }
+    hits.forEach((hit) => {
+      hit.addEventListener('mouseenter', () => show(Number(hit.dataset.i)));
+    });
+    wrap.addEventListener('mouseleave', hide);
+    // Touch / a11y: clicking a column toggles its tooltip.
+    hits.forEach((hit) => {
+      hit.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const i = Number(hit.dataset.i);
+        if (tooltip.hidden === false && wrap.dataset.lastI === String(i)) {
+          hide();
+        } else {
+          wrap.dataset.lastI = String(i);
+          show(i);
+        }
+      });
+    });
+  });
+  // Tap outside dismisses any open tooltip.
+  if (!document.body.dataset.sparkOutsideBound) {
+    document.body.dataset.sparkOutsideBound = '1';
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.spark-tooltip').forEach((t) => { if (!t.hidden) t.hidden = true; });
+    });
+  }
 }
 
 function renderEasee(status, live) {
@@ -910,6 +1021,7 @@ $('#vehicle-bulk-cancel')?.addEventListener('click', () => {
   renderBulkBar();
   renderVehicleFilterChips();
   renderVehicleEntries();
+  bindSparkChartHovers();
 });
 
 function loadMoreEntries() {
