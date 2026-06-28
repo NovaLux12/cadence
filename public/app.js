@@ -1384,7 +1384,8 @@ function escapeHtml(s) {
   // Meta
   try {
     const meta = await api('GET', '/api/meta');
-    $('#meta').textContent = `${meta.env}${meta.telegram ? ' · tg ✓' : ' · tg ✗'}`;
+    // tg indicator dropped: the telegram field was removed from /api/meta to close an info-leak.
+    $('#meta').textContent = meta.env;
   } catch (e) {
     $('#meta').textContent = 'offline';
   }
