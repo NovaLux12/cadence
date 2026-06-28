@@ -16,7 +16,12 @@ function requireAuth(c: Context<{ Bindings: Env }>): Response | null {
   const want = c.env.AUTH_TOKEN;
   if (!want) return c.json({ error: 'AUTH_TOKEN not set on server' }, 503);
   const got = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (got !== want) return c.json({ error: 'unauthorized' }, 401);
+  if (got.length !== want.length) return c.json({ error: 'unauthorized' }, 401);
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) {
+    diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  }
+  if (diff !== 0) return c.json({ error: 'unauthorized' }, 401);
   return null;
 }
 
