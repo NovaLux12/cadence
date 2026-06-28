@@ -1159,7 +1159,6 @@ $('#modal-close')?.addEventListener('click', closeModal);
 // replaced by resetModalActions' innerHTML assignment, so a module-load
 // listener wouldn't survive anyway).
 $('#modal-backdrop')?.addEventListener('click', (e) => {
-$('#modal-backdrop')?.addEventListener('click', (e) => {
   if (e.target.id === 'modal-backdrop') closeModal();
 });
 
@@ -1268,4 +1267,3 @@ function escapeHtml(s) {
   loadWatchlist();
   loadVehicle();
 })();
-})
