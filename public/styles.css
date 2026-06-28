@@ -468,6 +468,83 @@ a { color: var(--accent); }
 .spark-legend .dot-fuel { background: var(--accent); }
 .spark-legend .dot-elec { background: var(--green); }
 
+/* Spark chart hover layer */
+.spark-wrap { position: relative; }
+.spark-chart .spark-hit {
+  fill: transparent;
+  /* invisible but interactive; pointer-events default */
+}
+.spark-chart .spark-guide {
+  stroke: var(--border-strong);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.spark-chart .spark-guide.on { opacity: 0.7; }
+.spark-chart .spark-hover-dot {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.spark-chart .spark-hover-dot-elec.on { opacity: 1; fill: var(--green); stroke: var(--bg); stroke-width: 1; }
+.spark-chart .spark-hover-dot-fuel.on { opacity: 1; fill: var(--accent); stroke: var(--bg); stroke-width: 1; }
+
+/* Tooltip */
+.spark-tooltip {
+  position: absolute;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  z-index: 50;
+  pointer-events: none;
+  min-width: 130px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.spark-tooltip .t-month {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.spark-tooltip .t-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.spark-tooltip .t-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spark-tooltip .t-row .t-val {
+  margin-left: auto;
+  font-weight: 600;
+}
+.spark-tooltip .t-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.spark-tooltip .dot-fuel { background: var(--accent); }
+.spark-tooltip .dot-elec { background: var(--green); }
+.spark-tooltip .t-foot {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+}
+
 /* === Empty state === */
 .empty {
   text-align: center;
