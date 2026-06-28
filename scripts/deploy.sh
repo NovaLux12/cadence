@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cadence — manual deploy script
-# Run this from the repo root on a machine with wrangler auth (Jack's MacBook).
+# Run this from the repo root on a machine with wrangler auth.
 #
 # What this does:
 #   1. Creates the D1 database (idempotent — skips if it exists)
@@ -81,7 +81,7 @@ wrangler deploy
 WORKER_URL=$(wrangler deployments list 2>/dev/null | head -1 || echo "")
 green "✓ Deployed."
 blue "Default URL: https://cadence.<your-cf-subdomain>.workers.dev"
-blue "Bind cadence.jacklee.co.uk via Cloudflare dashboard → Workers → cadence → Settings → Triggers → Custom Domains"
+blue "Bind your custom domain (e.g. cadence.example.com) via Cloudflare dashboard → Workers → cadence → Settings → Triggers → Custom Domains"
 echo
 echo "Smoke test:"
-echo "  curl https://cadence.jacklee.co.uk/api/health"
+echo "  curl https://cadence.<your-domain>/api/health"
