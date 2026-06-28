@@ -47,7 +47,7 @@ INSERT INTO watchlist (title, category, status, next_action_date, next_action_la
 -- Vehicle settings
 -- =========================================================
 INSERT INTO vehicle_settings (vehicle, display_name, reg_plate, fuel_type, current_odo_miles, battery_capacity_kwh, home_electricity_pence_per_kwh, notes) VALUES
-('mycar', 'Family Car', NULL, 'phev', NULL, 14.4, 19.98, 'Placeholder. Replace with your real vehicle.');
+('mycar', 'Family Car', NULL, 'phev', NULL, 15.0, 20.00, 'Placeholder. Replace with your real vehicle.');
 
 -- =========================================================
 -- A few sample vehicle entries (placeholder; real ones via the UI)

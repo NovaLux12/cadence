@@ -26,7 +26,9 @@ not_found_handling = "single-page-application"
 [vars]
 ENVIRONMENT = "production"
 APP_NAME = "Cadence"
-APP_URL = "https://cadence.jacklee.co.uk"
+# APP_URL is optional (used for alert message footer). Override per-deployment
+# via `wrangler secret put APP_URL` so the production URL never lands in git.
+# Default fallback in code: https://cadence.example.com
 
 # Secrets (set via `wrangler secret put`):
 # - TELEGRAM_BOT_TOKEN
