@@ -667,7 +667,7 @@ export async function findAlertCandidates(
   `;
   const { results } = await db
     .prepare(sql)
-    .bind(todayParam, todayParam, days, todayParam, days, todayParam, days)
+    .bind(todayParam, todayParam, days, todayParam, todayParam, days, todayParam, todayParam, days)
     .all<AlertCandidate>();
   const out: AlertCandidate[] = [];
   for (const r of results ?? []) {
