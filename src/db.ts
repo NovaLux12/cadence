@@ -553,8 +553,10 @@ export async function upsertVehicleSettings(db: D1Database, s: Partial<VehicleSe
  * NOTE: `today` MUST be the local (Europe/London) date, computed in the
  * calling Worker via `todayLondon()`.  D1 itself runs on UTC, so
  * `date('now','localtime')` on a UTC host still returns UTC — it does NOT
- * give BST.  The Worker must pass the already-computed London date.
- * TODO: wire up `todayLondon()` at the /api/dashboard route level (Builder 2).
+ * give BST.  The Worker passes the already-computed London date; this
+ * function falls back to computing it itself if no `today` is supplied.
+ *
+ * Caller: `src/api.ts` (`/api/dashboard`) passes `db.todayLondon()`.
  */
 export async function dashboard(
   db: D1Database,
@@ -629,8 +631,10 @@ export interface AlertCandidate {
  * NOTE: `today` MUST be the local (Europe/London) date, computed in the
  * calling Worker via `todayLondon()`.  D1 itself runs on UTC, so
  * `date('now','localtime')` on a UTC host still returns UTC — it does NOT
- * give BST.  The alert runner (alerts.ts) must compute and pass today-London.
- * TODO: wire up `todayLondon()` in the alert caller (Builder 2 — alerts.ts / api.ts).
+ * give BST.  The alert runner passes the already-computed London date;
+ * this function falls back to computing it itself if no `today` is supplied.
+ *
+ * Caller: `src/api.ts` (`runAlerts`) passes `db.todayLondon()`.
  */
 export async function findAlertCandidates(
   db: D1Database,
