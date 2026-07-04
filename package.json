@@ -10,11 +10,14 @@
     "db:migrate:local": "wrangler d1 migrations apply cadence-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply cadence-db --remote",
     "db:seed:local": "wrangler d1 execute cadence-db --local --file=./seed.sql",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260627.0",
     "typescript": "^5.5.4",
+    "vitest": "^4.1.9",
     "wrangler": "^4.0.0"
   },
   "dependencies": {
