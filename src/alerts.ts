@@ -6,6 +6,22 @@ function penceToGBP(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
+/**
+ * Escape Telegram's "Markdown" parse-mode special chars so user-supplied
+ * content (subscription titles, reminder notes, etc.) can't break the
+ * parser. Telegram's docs:
+ *   https://core.telegram.org/bots/api#markdown-style
+ * In the legacy Markdown mode (parse_mode: 'Markdown'), the special
+ * chars are *, _, `, and [. The escape character is \.
+ *
+ * Why we do this: a subscription named "Apple *iCloud*" would otherwise
+ * produce `*Apple *iCloud**` in the message body, which the parser
+ * reads as nested bold and fails the whole message.
+ */
+export function escapeTelegramMarkdown(text: string): string {
+  return text.replace(/([_*`\[])/g, '\\$1');
+}
+
 export function formatAlert(c: AlertCandidate): string {
   const days = c.days_until;
   const dueStr = c.due_date;
@@ -18,10 +34,13 @@ export function formatAlert(c: AlertCandidate): string {
   const kindLabel =
     c.kind === 'subscription' ? 'Subscription' : c.kind === 'reminder' ? 'Reminder' : 'Watchlist';
   const lines = [
-    `${urgency} — ${kindLabel}: *${c.title}*`,
+    `${urgency} — ${kindLabel}: *${escapeTelegramMarkdown(c.title)}*`,
     `Due: ${dueStr}`,
   ];
-  if (c.notes) lines.push(`Notes: ${c.notes.slice(0, 200)}`);
+  if (c.notes) {
+    const trimmed = c.notes.slice(0, 200);
+    lines.push(`Notes: ${escapeTelegramMarkdown(trimmed)}`);
+  }
   return lines.join('\n');
 }
 
