@@ -12,12 +12,18 @@ export interface Env {
   AUTH_TOKEN?: string;
   EASEE_USERNAME?: string;
   EASEE_PASSWORD?: string;
-  // SmartCar (Phase 2)
-  SMARTCAR_CLIENT_ID?: string;
-  SMARTCAR_CLIENT_SECRET?: string;
-  SMARTCAR_REDIRECT_URI?: string;
-  SMARTCAR_ENCRYPTION_KEY?: string; // 32-byte base64
-  SMARTCAR_DEFAULT_MAKE?: string;   // optional — skip make selector if set
+  // SmartCar (Phase 2).
+  //
+  // SmartCar's dashboard exposes ONE identifier (a UUID-style App ID)
+  // that is used as both the OAuth `client_id` (Basic auth at the token
+  // endpoint) AND the `application_id` query param at the Connect
+  // authorize URL — they are the same value. Node / Java / Python SDKs
+  // all source both from the same field.
+  SMARTCAR_CLIENT_ID?: string;        // UUID-style App ID; OAuth client_id at /oauth/token
+  SMARTCAR_CLIENT_SECRET?: string;    // Basic auth password at /oauth/token
+  SMARTCAR_REDIRECT_URI?: string;     // Must match one of the redirect URIs in the dashboard
+  SMARTCAR_ENCRYPTION_KEY?: string;   // 32-byte base64 — AES-256-GCM key for token-at-rest
+  SMARTCAR_DEFAULT_MAKE?: string;     // optional — skip SmartCar's make selector if set
 }
 
 // Domain types — match migrations/0001_initial.sql

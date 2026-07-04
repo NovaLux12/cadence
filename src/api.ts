@@ -534,12 +534,17 @@ app.get('/api/vehicle/smartcar/connect', async (c) => {
   // send a Bearer header. CSRF protection is the cryptographically random
   // state token (24 bytes / 48 hex chars), validated on the callback.
   const vehicle = c.req.query('vehicle') ?? 'mycar';
+  // 'live' = real vehicles (default). 'simulated' = SmartCar's Vehicle
+  // Simulator for local/dev work — gated by ENVIRONMENT so it can't be
+  // flipped on production by a URL hack.
+  const mode = c.env.ENVIRONMENT === 'production' || c.req.query('simulated') !== '1' ? 'live' : 'simulated';
   const state = `${vehicle}:${newState()}`;
   const url = buildConnectUrl({
     clientId: c.env.SMARTCAR_CLIENT_ID!,
     redirectUri: c.env.SMARTCAR_REDIRECT_URI!,
     state,
     defaultMake: c.env.SMARTCAR_DEFAULT_MAKE,
+    mode,
   });
   return c.redirect(url, 302);
 });

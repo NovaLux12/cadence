@@ -25,7 +25,13 @@
 import type { Env } from './types';
 import { importEncryptionKey, encryptString, decryptString } from './crypto';
 
-const SMARTCAR_AUTH = 'https://auth.smartcar.com';
+// Hosts: per the docs
+//   connect.smartcar.com — user-facing authorize URL (/oauth/authorize)
+//   auth.smartcar.com    — token exchange + refresh (/oauth/token)
+//   iam.smartcar.com     — app-level client_credentials (NOT used here —
+//                          cadence drives the user-scoped code flow)
+const SMARTCAR_AUTH = 'https://connect.smartcar.com';
+const SMARTCAR_TOKEN = 'https://auth.smartcar.com';
 const SMARTCAR_API = 'https://vehicle.api.smartcar.com/v3';
 
 // Full scope set — adjusted per-tenant at request time if needed.
@@ -48,17 +54,25 @@ export type Scope = (typeof DEFAULT_SCOPES)[number];
 // =========================================================
 
 export interface ConnectInputs {
+  // SmartCar's UUID-style App ID from the dashboard. Used BOTH as the
+  // `application_id` query param here AND as the OAuth `client_id`
+  // username in Basic auth at /oauth/token. SmartCar exposes one
+  // identifier; the two names are aliases.
   clientId: string;
   redirectUri: string;
   state: string;
   scopes?: readonly Scope[];
   defaultMake?: string;
+  mode?: 'live' | 'simulated';      // 'live' = real vehicles (default), 'simulated' = test vehicles
 }
 
 export function buildConnectUrl(i: ConnectInputs): string {
   const url = new URL(`${SMARTCAR_AUTH}/oauth/authorize`);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('client_id', i.clientId);
+  // SmartCar's current authorize-URL parameter name is `application_id`.
+  // The Java SDK / older docs use `client_id`; the field is the same UUID.
+  url.searchParams.set('application_id', i.clientId);
+  url.searchParams.set('mode', i.mode ?? 'live');
   url.searchParams.set('redirect_uri', i.redirectUri);
   url.searchParams.set('scope', (i.scopes ?? DEFAULT_SCOPES).join(' '));
   url.searchParams.set('state', i.state);
@@ -95,7 +109,7 @@ export async function exchangeAuthCode(i: ExchangeInputs): Promise<TokenResponse
     code: i.code,
     redirect_uri: i.redirectUri,
   });
-  const r = await fetch(`${SMARTCAR_AUTH}/oauth/token`, {
+  const r = await fetch(`${SMARTCAR_TOKEN}/oauth/token`, {
     method: 'POST',
     headers: {
       Authorization: 'Basic ' + btoa(`${i.clientId}:${i.clientSecret}`),
@@ -119,7 +133,7 @@ export async function refreshTokens(i: {
     grant_type: 'refresh_token',
     refresh_token: i.refreshToken,
   });
-  const r = await fetch(`${SMARTCAR_AUTH}/oauth/token`, {
+  const r = await fetch(`${SMARTCAR_TOKEN}/oauth/token`, {
     method: 'POST',
     headers: {
       Authorization: 'Basic ' + btoa(`${i.clientId}:${i.clientSecret}`),
