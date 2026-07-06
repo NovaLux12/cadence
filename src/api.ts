@@ -14,6 +14,7 @@ import {
   listVehicles,
 } from './smartcar';
 import { importEncryptionKey, encryptString } from './crypto';
+import { searchAll, prepareSearch } from './search';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,6 +48,34 @@ app.get('/api/meta', (c) =>
     env: c.env.ENVIRONMENT,
   })
 );
+
+// =========================================================
+// Global search
+// =========================================================
+//
+// GET /api/search?q=<needle>[&limit=<n>][&kinds=subscription,reminder,watchlist,vehicle]
+//   → ranked, score-sorted list of matching items across all four entities.
+// Public read endpoint (matches /api/dashboard, /api/subscriptions, etc.)
+//
+// Min query length is enforced inside prepareSearch() — too-short inputs
+// return an empty list rather than 400, mirroring the existing
+// /api/vehicle/entries?q=... pattern in db.ts listVehicleEntries.
+app.get('/api/search', async (c) => {
+  const q = c.req.query('q') ?? '';
+  const limitParam = c.req.query('limit');
+  const kindsParam = c.req.query('kinds');
+  const limit = limitParam ? Number(limitParam) : undefined;
+  const kinds = kindsParam
+    ? (kindsParam.split(',').filter(Boolean) as ('subscription' | 'reminder' | 'watchlist' | 'vehicle')[])
+    : undefined;
+  // Touch prepareSearch() so missing Q still returns [] instead of an
+  // unhandled undefined.
+  if (!prepareSearch(q)) {
+    return c.json({ q, count: 0, results: [] });
+  }
+  const results = await searchAll(c.env.DB, q, { limit, kinds });
+  return c.json({ q: q.trim(), count: results.length, results });
+});
 
 // =========================================================
 // Dashboard
