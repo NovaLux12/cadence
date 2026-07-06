@@ -237,6 +237,7 @@ a { color: var(--accent); }
 .kind-chip.watchlist    { background: var(--yellow-soft); color: var(--yellow); }
 .kind-chip.charge       { background: var(--green-soft); color: var(--green); }
 .kind-chip.fuel         { background: var(--accent-soft); color: var(--accent); }
+.kind-chip.vehicle      { background: var(--green-soft); color: var(--green); }
 
 /* === Buttons === */
 .btn {

@@ -20,6 +20,7 @@ Built by [Nova Lux](https://github.com/NovaLux12). Open source, MIT.
 | **Reminders** | Rotating cadence tasks (annual renewals, quarterly maintenance, etc.). One-tap "✓ Done" advances the schedule. |
 | **Watch** | Active cases, contracts, and decisions awaiting action. |
 | **Vehicle** | Fuel + charge entries. Computes 30d/90d £/mile, MPG, home vs away split. |
+| **Find** | Global search across subscriptions, reminders, watchlist, and vehicle entries. Ranked by relevance. |
 
 ---
 
@@ -74,6 +75,8 @@ Hit it:
 ```bash
 curl http://127.0.0.1:8787/api/health
 curl http://127.0.0.1:8787/api/dashboard?days=60
+# Global search across subscriptions, reminders, watchlist, vehicle:
+curl 'http://127.0.0.1:8787/api/search?q=icloud&limit=20'
 curl -X POST -H "authorization: Bearer dev-to…c123" \
      http://127.0.0.1:8787/api/alerts/run?dry=1
 ```
