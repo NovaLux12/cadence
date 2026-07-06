@@ -25,6 +25,7 @@
     <button class="tab" data-tab="reminders">Reminders</button>
     <button class="tab" data-tab="watchlist">Watch</button>
     <button class="tab" data-tab="vehicle">Vehicle</button>
+    <button class="tab" data-tab="find">Find</button>
   </nav>
 
   <main id="app">
@@ -118,6 +119,21 @@
         <p>No entries yet.</p>
         <p class="empty-sub">Log fuel fills and charge sessions to see running costs and £/mile.</p>
         <button class="btn btn-primary" data-add="vehicle-entry">+ Log your first fill</button>
+      </div>
+    </section>
+    <section id="tab-find" class="tab-panel">
+      <div class="panel-header">
+        <h2>Find</h2>
+        <div class="panel-sub">Search across everything in Cadence</div>
+      </div>
+      <div class="search-wrap">
+        <input type="search" id="find-search" class="search-input" placeholder="Search anything…" aria-label="Global search" autocomplete="off" spellcheck="false">
+        <button type="button" id="find-search-clear" class="search-clear" aria-label="Clear search" hidden>✕</button>
+      </div>
+      <div id="find-list" class="card-list"></div>
+      <div class="empty" id="find-empty">
+        <p id="find-empty-primary">Type 2+ characters to search.</p>
+        <p class="empty-sub" id="find-empty-sub">Subscriptions, reminders, watchlist, vehicle entries.</p>
       </div>
     </section>
   </main>

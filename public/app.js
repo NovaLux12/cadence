@@ -135,6 +135,11 @@ function setTab(name) {
   if (name === 'reminders') loadReminders();
   if (name === 'watchlist') loadWatchlist();
   if (name === 'vehicle') loadVehicle();
+  if (name === 'find') {
+    // Focus the search input on tab entry if it's empty — convenience.
+    const input = $('#find-search');
+    if (input && !input.value) input.focus();
+  }
 }
 
 document.addEventListener('click', (e) => {
@@ -303,6 +308,138 @@ function renderSubscriptions() {
     list.appendChild(card);
   }
 }
+
+// =========================================================
+// Find (global /api/search results)
+// =========================================================
+
+/** Per-result mapping from the /api/search response to a target tab. */
+const FIND_TAB_BY_KIND = {
+  subscription: 'subscriptions',
+  reminder: 'reminders',
+  watchlist: 'watchlist',
+  vehicle: 'vehicle',
+};
+
+/** Human labels per kind (used as the chip text + default title fallback). */
+const FIND_KIND_LABEL = {
+  subscription: 'Subscription',
+  reminder: 'Reminder',
+  watchlist: 'Watchlist',
+  vehicle: 'Vehicle',
+};
+
+/**
+ * Run a search via /api/search and re-render the Find list.
+ * Skipped while the input is empty or under the server's 2-char min length.
+ */
+async function runFind(query) {
+  const list = $('#find-list');
+  const empty = $('#find-empty');
+  const emptyPrimary = $('#find-empty-primary');
+  const emptySub = $('#find-empty-sub');
+  if (!list || !empty) return;
+
+  const q = query.trim();
+  if (q.length < 2) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    emptyPrimary.textContent = q.length === 0
+      ? 'Type 2+ characters to search.'
+      : 'Keep typing — need 2+ characters.';
+    emptySub.textContent = 'Subscriptions, reminders, watchlist, vehicle entries.';
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await api('GET', `/api/search?q=${encodeURIComponent(q)}&limit=50`);
+  } catch (err) {
+    empty.classList.remove('hidden');
+    emptyPrimary.textContent = 'Search failed';
+    emptySub.textContent = err.message || String(err);
+    list.innerHTML = '';
+    return;
+  }
+
+  renderFindResults(payload.results ?? [], q);
+}
+
+/**
+ * Render /api/search results as cards. Each card has a kind chip + title
+ * + subtitle + dated label, and clicking it jumps to the right tab. We
+ * don't open the item in a modal — that requires loading by id which is
+ * scope creep for this PR.
+ */
+function renderFindResults(results, query) {
+  const list = $('#find-list');
+  const empty = $('#find-empty');
+  const emptyPrimary = $('#find-empty-primary');
+  const emptySub = $('#find-empty-sub');
+  if (!list || !empty) return;
+  list.innerHTML = '';
+
+  if (results.length === 0) {
+    empty.classList.remove('hidden');
+    emptyPrimary.textContent = `No matches for “${escapeHtml(query)}”`;
+    emptySub.textContent = 'Try a shorter or less specific query.';
+    return;
+  }
+  empty.classList.add('hidden');
+
+  for (const r of results) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.kind = r.kind;
+    card.dataset.id = String(r.id);
+    const kindLabel = FIND_KIND_LABEL[r.kind] || r.kind;
+    const metaBits = [];
+    if (r.category) metaBits.push(`<span class="kind-chip ${r.kind}">${escapeHtml(r.category)}</span>`);
+    if (r.date) metaBits.push(`<span class="meta-value">${escapeHtml(r.date_label)} ${escapeHtml(fmtDate(r.date))}</span>`);
+    card.innerHTML = `
+      <div class="card-row1">
+        <span class="kind-chip ${r.kind}">${escapeHtml(kindLabel)}</span>
+        <div class="card-title">${escapeHtml(r.title)}</div>
+      </div>
+      ${r.subtitle ? `<div class="card-row2">${escapeHtml(r.subtitle)}</div>` : ''}
+    `;
+    if (metaBits.length) {
+      // Slotted under the title row to keep the chip on its own line.
+      const meta = document.createElement('div');
+      meta.className = 'card-row2';
+      meta.innerHTML = metaBits.join('<span class="sep">·</span>');
+      card.appendChild(meta);
+    }
+    card.addEventListener('click', () => {
+      const target = FIND_TAB_BY_KIND[r.kind];
+      if (target) setTab(target);
+    });
+    list.appendChild(card);
+  }
+}
+
+// Debounced search — same 250ms cadence as the vehicle search so they feel consistent.
+const debouncedFind = debounce(() => {
+  const input = $('#find-search');
+  if (!input) return;
+  runFind(input.value);
+}, 250);
+
+$('#find-search')?.addEventListener('input', (ev) => {
+  const clearBtn = $('#find-search-clear');
+  if (clearBtn) clearBtn.hidden = !ev.target.value;
+  debouncedFind();
+});
+
+$('#find-search-clear')?.addEventListener('click', () => {
+  const input = $('#find-search');
+  if (!input) return;
+  input.value = '';
+  const clearBtn = $('#find-search-clear');
+  if (clearBtn) clearBtn.hidden = true;
+  runFind('');
+  input.focus();
+});
 
 // =========================================================
 // Reminders
