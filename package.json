@@ -1,6 +1,6 @@
 {
   "name": "cadence",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal recurring items tracker with smart alerts.",
   "private": true,
   "type": "module",
