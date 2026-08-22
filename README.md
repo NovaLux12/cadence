@@ -1,4 +1,5 @@
 # Cadence
+[![CI](https://github.com/NovaLux12/cadence/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaLux12/cadence/actions/workflows/ci.yml)
 
 > Personal recurring items tracker with smart alerts. One dashboard for everything that has a due date.
 
@@ -115,7 +116,7 @@ npx wrangler deploy
 The repo also ships with a one-shot script (`scripts/deploy.sh`) that
 handles D1 create + migrate + seed + secrets + deploy in order. See
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) for a
-GitHub Actions auto-deploy on push to `master`.
+GitHub Actions auto-deploy on push to `main`.
 
 ---
 
