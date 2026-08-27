@@ -15,12 +15,12 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260815.1",
+    "@cloudflare/workers-types": "^5.20260827.1",
     "typescript": "^5.5.4",
-    "vitest": "^4.1.9",
-    "wrangler": "^4.124.0"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.0"
   },
   "dependencies": {
-    "hono": "^4.12.34"
+    "hono": "^4.13.5"
   }
 }
