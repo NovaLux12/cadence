@@ -145,17 +145,28 @@ Read endpoints are public. Write endpoints require `Authorization: Bearer $AUTH_
 | `GET`    | `/api/vehicle/entries` | List (filter by vehicle, since, until, type) |
 | `POST`   | `/api/vehicle/entries` | Create |
 | `DELETE` | `/api/vehicle/entries/:id` | Delete |
+| `POST`   | `/api/vehicle/entries/:id/toggle-ignored` | Toggle ignored flag on an entry |
+| `POST`   | `/api/vehicle/bulk-action` | Bulk actions over vehicle entries |
+| `POST`   | `/api/vehicle/import-fuelly` | Import Fuelly CSV export |
 | `GET`    | `/api/vehicle/summary?vehicle=mycar` | 30d/90d rollup + pence/mile + MPG |
+| `GET`    | `/api/vehicle/insights` | Derived insights (projections, efficiency trends) |
 | `GET`    | `/api/vehicle/settings?vehicle=mycar` | Get |
 | `PUT`    | `/api/vehicle/settings` | Upsert |
 | `POST`   | `/api/alerts/run?days=60&dry=1` | Manual alert dispatch (dry-run or send) |
 | `POST`   | `/api/alerts/test` | Send a single test message to Telegram |
+| `POST`   | `/api/easee/sync` | Sync charging sessions from Easee (optional) |
+| `POST`   | `/api/easee/backfill` | Backfill historical Easee sessions |
+| `GET`    | `/api/easee/status` / `/api/easee/live` | Easee sync status / live charger state |
+| `GET`    | `/api/vehicle/smartcar/status` | Smartcar connection status (optional) |
+| `GET`    | `/api/vehicle/smartcar/connect` | Start Smartcar OAuth flow |
+| `GET`    | `/api/vehicle/smartcar/callback` | Smartcar OAuth callback |
+| `DELETE` | `/api/vehicle/smartcar/connection` | Disconnect Smartcar |
 
 ---
 
 ## Data model
 
-Five tables:
+Nine tables:
 
 - `subscriptions` — name, vendor, cost, billing_cycle, next_due_date, status, alert_windows, notes
 - `reminders` — title, cadence_value/unit, last_done, next_due, alert_windows, notes
@@ -163,6 +174,9 @@ Five tables:
 - `vehicle_entries` — entry_type (fuel/charge), date, odometer, kwh/litres, cost_pence, is_home_charge
 - `vehicle_settings` — per-vehicle constants (odo, battery, electricity rate)
 - `alert_log` — idempotency guard: `item_kind + item_id + window_days + date(sent_at)` is unique per day
+- `schema_meta` — applied-migration bookkeeping
+- `vehicle_connections` — Smartcar OAuth connection state (encrypted tokens)
+- `vehicle_snapshots` — append-only Smartcar telemetry samples (odometer, fuel/charge level, charging state)
 
 `alert_windows` is a CSV of days-before-due to alert (default `30,14,7,1`).
 Each item matches any of its windows when `days_until <= window_days`.
@@ -180,6 +194,11 @@ Marking done advances it.
 | `TELEGRAM_BOT_TOKEN` | for alerts | From @BotFather |
 | `TELEGRAM_CHAT_ID` | for alerts | Numeric chat id (user or group) |
 | `APP_URL` | no | Used for alert message footer |
+| `EASEE_USERNAME` / `EASEE_PASSWORD` | no | Easee charger credentials (optional session sync) |
+| `SMARTCAR_CLIENT_ID` / `SMARTCAR_CLIENT_SECRET` | no | Smartcar OAuth app (optional odometer snapshots) |
+| `SMARTCAR_REDIRECT_URI` | for Smartcar | OAuth redirect URL |
+| `SMARTCAR_ENCRYPTION_KEY` | for Smartcar | Key for encrypting stored tokens |
+| `SMARTCAR_DEFAULT_MAKE` | no | Default vehicle make for the connection flow |
 
 ---
 
