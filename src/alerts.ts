@@ -73,15 +73,20 @@ export async function sendTelegram(env: Env, text: string): Promise<boolean> {
   }
 }
 
-export async function batchTelegram(env: Env, messages: string[]): Promise<number> {
-  if (messages.length === 0) return 0;
+export async function batchTelegram(env: Env, messages: string[]): Promise<boolean[]> {
+  if (messages.length === 0) return [];
   // Send each individually; simple, reliable, no message-size surprises.
-  let sent = 0;
-  for (const m of messages) {
+  // Return per-message success booleans so callers (e.g. runAlerts) can record
+  // accurate per-candidate outcomes in alert_log — a partial failure must not
+  // be whitewashed into "all sent" on the next cron tick.
+  const results: boolean[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
     const ok = await sendTelegram(env, m);
-    if (ok) sent++;
-    // Polite gap to avoid Telegram's anti-flood limits (1 msg/sec to same chat)
-    if (m !== messages[messages.length - 1]) await new Promise((res) => setTimeout(res, 1100));
+    results.push(ok);
+    // Polite gap to avoid Telegram's anti-flood limits (1 msg/sec to same chat).
+    // Skip the wait after the very last message so callers don't pay it twice.
+    if (i < messages.length - 1) await new Promise((res) => setTimeout(res, 1100));
   }
-  return sent;
+  return results;
 }
