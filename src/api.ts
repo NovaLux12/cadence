@@ -438,37 +438,45 @@ app.post('/api/alerts/run', async (c) => {
 
 export async function runAlerts(env: Env, days: number, dry: boolean, today?: string) {
   const cands = await db.findAlertCandidates(env.DB, days, today);
-  const messages: string[] = [];
-  const sentKeys = new Set<string>();
+  // Track per-candidate outcome so a partial Telegram failure no longer
+  // gets whitewashed: each row in `cands` gets its own boolean.
+  const queued: Array<{ cand: typeof cands[number]; text: string; ok: boolean }> = [];
   let skipped = 0;
-  let sent = 0;
-  let failed = 0;
-  for (const c of cands) {
-    const already = await db.alertAlreadySent(env.DB, c.kind, c.id, c.window_days);
+  for (const cand of cands) {
+    const already = await db.alertAlreadySent(env.DB, cand.kind, cand.id, cand.window_days);
     if (already) {
       skipped++;
       continue;
     }
-    const text = formatAlert(c);
-    messages.push(text);
-    sentKeys.add(c.kind + '|' + c.id + '|' + c.window_days);
+    queued.push({ cand, text: formatAlert(cand), ok: false });
   }
-  if (messages.length > 0 && !dry) {
-    sent = await batchTelegram(env, messages);
-    failed = messages.length - sent;
-    // Record alerts
-    for (const cand of cands) {
-      const already = await db.alertAlreadySent(env.DB, cand.kind, cand.id, cand.window_days);
-      if (already) continue;
-      const key = cand.kind + '|' + cand.id + '|' + cand.window_days;
-      const ok = sentKeys.has(key) && sent > 0;
-      await db.recordAlert(env.DB, cand.kind, cand.id, cand.window_days, ok);
+  let sent = 0;
+  let failed = 0;
+  if (queued.length > 0 && !dry) {
+    const results = await batchTelegram(env, queued.map((q) => q.text));
+    for (let i = 0; i < queued.length; i++) {
+      queued[i].ok = results[i] ?? false;
+    }
+    // Record alert_log with the *actual* per-message result so a failed
+    // message re-fires on the next cron tick (correct behaviour). Previously
+    // this loop marked every queued row as ok=1 whenever sent > 0, which
+    // silently swallowed the partial-failure case.
+    for (const q of queued) {
+      await db.recordAlert(env.DB, q.cand.kind, q.cand.id, q.cand.window_days, q.ok);
+    }
+    sent = queued.filter((q) => q.ok).length;
+    failed = queued.length - sent;
+    if (failed > 0) {
+      console.warn(
+        `[alerts] ${failed}/${queued.length} Telegram messages failed ` +
+          `(see [alert] telegram logs above); they will re-fire on the next cron tick.`,
+      );
     }
   }
   return {
     candidates: cands.length,
     skipped_already_sent: skipped,
-    messages: messages,
+    messages: queued.map((q) => q.text),
     sent,
     failed,
     dry,
