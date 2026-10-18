@@ -45,7 +45,8 @@ jobs:
           DEPLOY_LOG: /tmp/wrangler-deploy.log
         run: |
           if [ -z "$APP_URL" ]; then
-            APP_URL=$(grep -oE 'https://[a-z0-9-]+\.workers\.dev' "$DEPLOY_LOG" | head -1)
+            # Cloudflare prints URLs like https://<worker>.<subhash>.workers.dev
+            APP_URL=$(grep -oE 'https://[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' "$DEPLOY_LOG" | head -1)
           fi
           if [ -z "$APP_URL" ]; then
             echo "::error::Could not determine deployed URL — set the APP_URL repo variable or surface it from wrangler deploy output."
